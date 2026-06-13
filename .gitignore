@@ -1,0 +1,30 @@
+# Databases
+*.db
+*.sqlite3
+
+# Credentials & Environments
+.env
+.env.local
+.env.*.local
+
+# Python Caches & Environments
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env/
+venv/
+.venv/
+env/
+
+# IDEs & System files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Test & Browser artifacts
+test-results/
+
+# Temporary / Scratch scripts containing hardcoded credentials
+scratch/

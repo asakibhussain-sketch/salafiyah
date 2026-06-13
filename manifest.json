@@ -1,0 +1,16 @@
+{
+  "name": "Salafiyah",
+  "short_name": "Salafiyah",
+  "description": "Your All-in-One Spiritual Companion",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#FDFCF9",
+  "theme_color": "#006994",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
