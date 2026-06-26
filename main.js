@@ -213,6 +213,14 @@ const getInitialState = () => {
             tasbih: { type: 'custom', target: 1000, progress: 0 },
             date: new Date().toDateString()
         },
+        calendarView: {
+            month: new Date().getMonth() + 1,
+            year: new Date().getFullYear()
+        },
+        quranHadithState: {
+            currentSurah: 1,
+            currentAyah: 1
+        },
         lastRead: JSON.parse(localStorage.getItem('last_read')) || {
             surahNum: 67,
             surahName: 'Al-Mulk',
@@ -233,6 +241,7 @@ const getInitialState = () => {
             accentColor: localStorage.getItem('accent_color') || '#006994',
             uiDensity: localStorage.getItem('ui_density') || 'regular',
             focusMode: localStorage.getItem('focus_mode') === 'true',
+            hijriOffset: localStorage.getItem('hijri_offset') !== null ? parseInt(localStorage.getItem('hijri_offset')) : 1,
             hapticStyle: localStorage.getItem('haptic_style') || 'soft',
             currentTheme: localStorage.getItem('app_theme') || localStorage.getItem('theme') || 'light',
             animationIntensity: parseFloat(localStorage.getItem('anim_intensity')) || 1,
@@ -523,6 +532,10 @@ window.app = {
     setPlaybackRate: (...args) => setPlaybackRate(...args),
     skipAyah: (...args) => skipAyah(...args),
     toggleLanguageModal: (...args) => toggleLanguageModal(...args),
+    toggleAboutModal: () => toggleAboutModal(),
+    renderHadithScreen: (...args) => renderHadithScreen(...args),
+    filterHadithBooks: (...args) => filterHadithBooks(...args),
+    loadHadithBook: (...args) => loadHadithBook(...args),
     setTranslation: (...args) => setTranslation(...args),
     setUILanguage: (...args) => setUILanguage(...args),
     resetMushaf: (...args) => resetMushaf(...args),
@@ -554,6 +567,7 @@ window.app = {
     renderDuas: (...args) => renderDuas(...args),
     renderLanguages: (...args) => renderLanguages(...args),
     renderCalendar: (...args) => renderCalendar(...args),
+    navigateCalendar: (...args) => navigateCalendar(...args),
 
     exitFocusMode: () => {
         state.settings.focusMode = false;
@@ -997,10 +1011,11 @@ async function loadScreen(screen) {
             case 'ask': renderChat(); break;
             case 'duas': renderDuas(); break;
             case 'toolkit': renderToolkitHub(); break;
+            case 'hadith': await renderHadithScreen(); break;
             case 'qaza': renderQaza(); break;
             case 'zakat': renderZakat(); break;
             case 'goals': renderGoals(); break;
-            case 'quiz': renderQuiz(); break;
+            case 'quiz': await renderQuiz(); break;
             case 'bookmarks': renderBookmarks(); break;
             case 'customization': renderCustomization(); break;
             case 'calendar': renderCalendar(); break;
@@ -1317,41 +1332,32 @@ function closePlayer() {
 }
 
 async function playAyahAudio(surahId, ayahNum) {
+    if (state.audio.isPlaying && state.audio.currentSurah === surahId && state.audio.currentAyah === ayahNum) {
+        toggleAudio();
+        return;
+    }
+
     try {
-        const res = await fetch(`https://api.alquran.cloud/v1/ayah/${surahId}:${ayahNum}/${state.audio.reciter}`);
+        state.audio.currentSurah = surahId;
+        const res = await fetch(`https://api.alquran.cloud/v1/surah/${surahId}/${state.audio.reciter}`);
         const data = await res.json();
-        const ayah = data.data;
+        state.audio.surahData = data.data;
+        
+        // Find the index of the requested ayah so playNextAyah() can play it
+        const ayahIndex = data.data.ayahs.findIndex(a => a.numberInSurah === ayahNum);
+        
+        // playNextAyah() increments the index, so we set it to index - 1
+        state.audio.currentAyahIndex = ayahIndex - 1;
 
-        state.audio.player.src = ayah.audio;
-        state.audio.player.playbackRate = state.audio.playbackRate;
-        state.audio.player.play();
-        state.audio.isPlaying = true;
-        state.audio.currentAyah = ayahNum;
+        // Sync Mushaf Page if active
+        if (state.currentScreen === 'mushaf' && data.data.ayahs && data.data.ayahs.length > 0) {
+            const startPage = data.data.ayahs[ayahIndex > -1 ? ayahIndex : 0].page;
+            state.settings.mushafPage = startPage;
+            localStorage.setItem('mushaf_page', startPage);
+            renderMushaf();
+        }
 
-        state.audio.surahData = { englishName: ayah.surah.englishName, recitation: { name: 'Mishary Rashid Alafasy' }, ayahs: [ayah] };
-        state.audio.currentAyahIndex = 0;
-
-        state.audio.player.onended = () => {
-            if (state.audio.loopMode === 'ayah') {
-                state.audio.player.play();
-            } else {
-                closePlayer();
-            }
-        };
-
-        state.audio.player.ontimeupdate = () => {
-            const slider = document.getElementById('audio-progress');
-            if (slider && !slider.matches(':active')) {
-                slider.value = (state.audio.player.currentTime / state.audio.player.duration) * 100 || 0;
-            }
-            const currTimeSpan = document.getElementById('audio-current-time');
-            const totalTimeSpan = document.getElementById('audio-total-time');
-            if (currTimeSpan) currTimeSpan.textContent = formatTime(state.audio.player.currentTime);
-            if (totalTimeSpan && !isNaN(state.audio.player.duration) && state.audio.player.duration !== Infinity) {
-                totalTimeSpan.textContent = formatTime(state.audio.player.duration);
-            }
-        };
-
+        playNextAyah();
         showAudioPlayer();
     } catch (e) {
         console.error("Audio Error:", e);
@@ -1389,6 +1395,65 @@ function skipSurah(direction) {
     playSurahAudio(nextSurah);
 }
 
+function skipAyah(direction) {
+    if (!state.audio.surahData) return;
+
+    // Case 1: Playing a full surah (multiple ayahs loaded)
+    if (state.audio.surahData.ayahs && state.audio.surahData.ayahs.length > 1) {
+        let newIndex = direction === 'next' ? state.audio.currentAyahIndex + 1 : state.audio.currentAyahIndex - 1;
+
+        if (newIndex >= state.audio.surahData.ayahs.length) {
+            if (state.audio.loopMode === 'surah') {
+                newIndex = 0;
+            } else {
+                skipSurah('next');
+                return;
+            }
+        } else if (newIndex < 0) {
+            if (state.audio.loopMode === 'surah') {
+                newIndex = state.audio.surahData.ayahs.length - 1;
+            } else {
+                skipSurah('prev');
+                return;
+            }
+        }
+
+        state.audio.currentAyahIndex = newIndex;
+
+        const ayah = state.audio.surahData.ayahs[state.audio.currentAyahIndex];
+        state.audio.currentAyah = ayah.numberInSurah;
+        state.audio.player.src = ayah.audio;
+        state.audio.player.playbackRate = state.audio.playbackRate;
+        state.audio.player.play();
+        state.audio.isPlaying = true;
+
+        updatePlayerUI();
+        highlightAyah(ayah.numberInSurah);
+    }
+    // Case 2: Playing a single ayah
+    else if (state.audio.currentSurah && state.audio.currentAyah) {
+        const surahs = JSON.parse(localStorage.getItem('surahs_list')) || [];
+        const currentSurahObj = surahs.find(s => s.number === state.audio.currentSurah);
+        const totalAyahs = currentSurahObj ? currentSurahObj.numberOfAyahs : 114;
+
+        let nextAyah = direction === 'next' ? state.audio.currentAyah + 1 : state.audio.currentAyah - 1;
+
+        if (nextAyah > totalAyahs) {
+            let nextSurah = state.audio.currentSurah + 1;
+            if (nextSurah > 114) nextSurah = 1;
+            playAyahAudio(nextSurah, 1);
+        } else if (nextAyah < 1) {
+            let prevSurah = state.audio.currentSurah - 1;
+            if (prevSurah < 1) prevSurah = 114;
+            const prevSurahObj = surahs.find(s => s.number === prevSurah);
+            const prevTotalAyahs = prevSurahObj ? prevSurahObj.numberOfAyahs : 7;
+            playAyahAudio(prevSurah, prevTotalAyahs);
+        } else {
+            playAyahAudio(state.audio.currentSurah, nextAyah);
+        }
+    }
+}
+
 function handleProgressSeek(val) {
     if (state.audio.player.duration) {
         state.audio.player.currentTime = (val / 100) * state.audio.player.duration;
@@ -1399,14 +1464,79 @@ async function renderDashboard() {
     try {
         const hijriDate = state.hijri ? `${state.hijri.day} ${state.hijri.month.en} ${state.hijri.year}` : 'Loading...';
 
-        // Mock prayer times for premium UI feel
-        const prayerTimes = [
-            { name: 'Fajr', time: '4:32 AM' },
-            { name: 'Dhuhr', time: '12:23 PM' },
-            { name: 'Asr', time: '3:45 PM' },
-            { name: 'Maghrib', time: '6:47 PM', active: true },
-            { name: 'Isha', time: '8:15 PM' }
+        // Calculate upcoming fasts dynamically
+        const getNextDayOfWeek = (date, dayOfWeek) => {
+            const resultDate = new Date(date);
+            const currentDay = resultDate.getDay();
+            const distance = (dayOfWeek - currentDay + 7) % 7;
+            resultDate.setDate(resultDate.getDate() + distance);
+            return resultDate;
+        };
+
+        const getNextHijri13th = (startDate) => {
+            const date = new Date(startDate);
+            for (let i = 0; i < 35; i++) {
+                const checkDate = new Date(date);
+                checkDate.setDate(date.getDate() + i);
+                let hijriDay;
+                try {
+                    const formatter = new Intl.DateTimeFormat('en-u-ca-islamic-umalqura', { day: 'numeric' });
+                    hijriDay = parseInt(formatter.format(checkDate), 10);
+                } catch (e) {
+                    hijriDay = getOfflineHijri(checkDate).day;
+                }
+                if (hijriDay === 13) {
+                    return checkDate;
+                }
+            }
+            const fallback = new Date(startDate);
+            fallback.setDate(fallback.getDate() + 4);
+            return fallback;
+        };
+
+        const now = new Date();
+        const candidates = [
+            { name: 'Ayyam al-Bidh (13th)', date: getNextHijri13th(now) },
+            { name: 'Sunnah Monday', date: getNextDayOfWeek(now, 1) },
+            { name: 'Sunnah Thursday', date: getNextDayOfWeek(now, 4) }
         ];
+
+        candidates.sort((a, b) => a.date - b.date);
+
+        const uniqueCandidates = [];
+        const seenDates = new Set();
+        for (const c of candidates) {
+            const dateStr = c.date.toDateString();
+            if (!seenDates.has(dateStr)) {
+                seenDates.add(dateStr);
+                uniqueCandidates.push(c);
+            }
+        }
+
+        const formatUpcomingFastDate = (date) => {
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        };
+
+        const upcomingFastsHtml = uniqueCandidates.slice(0, 2).map(c => `
+            <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-secondary);">
+                <span>${c.name}</span>
+                <span style="font-weight: 700; color: var(--accent-gold);">${formatUpcomingFastDate(c.date)}</span>
+            </div>
+        `).join('');
+
+        const prayerOrder = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+        const nextPrayer = getNextPrayer();
+        const prayerItemsHtml = state.prayerTimes ? prayerOrder.map(name => {
+            const rawTime = state.prayerTimes[name];
+            const time = formatPrayerTime(rawTime);
+            const isNext = nextPrayer && nextPrayer.name.includes(name);
+            return `
+                <div class="prayer-item ${isNext ? 'active' : ''}" style="color: ${isNext ? 'var(--accent-emerald)' : 'var(--text-secondary)'}">
+                    <span>${name}</span>
+                    <span style="font-weight: 700;">${time}</span>
+                </div>
+            `;
+        }).join('') : `<div style="text-align: center; color: var(--text-muted); font-size: 0.8rem;">Location required for accurate times</div>`;
 
         contentArea.innerHTML = `
             <div class="premium-dashboard" style="animation: entrance 0.8s var(--anim-spring) both;">
@@ -1462,13 +1592,8 @@ async function renderDashboard() {
                             </div>
                             <span style="font-size: 0.65rem; color: var(--text-muted);">${hijriDate}</span>
                         </div>
-                        <div class="prayer-list">
-                            ${prayerTimes.map(p => `
-                                <div class="prayer-item ${p.active ? 'active' : ''}" style="color: ${p.active ? 'var(--accent-emerald)' : 'var(--text-secondary)'}">
-                                    <span>${p.name}</span>
-                                    <span style="font-weight: 700;">${p.time}</span>
-                                </div>
-                            `).join('')}
+                        <div class="prayer-list" id="dashboard-prayer-list">
+                            ${prayerItemsHtml}
                         </div>
                     </div>
 
@@ -1519,14 +1644,7 @@ async function renderDashboard() {
                         <div style="margin-top: auto;">
                             <div style="font-size: 0.65rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.75rem;">Upcoming Fasts</div>
                             <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-                                <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-secondary);">
-                                    <span>Ayyam al-Bidh (13th)</span>
-                                    <span style="font-weight: 700; color: var(--accent-gold);">May 12</span>
-                                </div>
-                                <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-secondary);">
-                                    <span>Sunnah Monday</span>
-                                    <span style="font-weight: 700; color: var(--accent-gold);">May 4</span>
-                                </div>
+                                ${upcomingFastsHtml}
                             </div>
                         </div>
 
@@ -2184,86 +2302,165 @@ function setLanguage(lang) {
     location.reload(); // Quickest way to re-init everything with new language
 }
 
-function renderCalendar() {
+async function renderCalendar() {
     const screenTitle = document.getElementById('screen-title');
     screenTitle.textContent = "Islamic Calendar";
 
+    const { month, year } = state.calendarView;
     const now = new Date();
-    const month = now.getMonth();
-    const year = now.getFullYear();
+    const isCurrentMonth = month === (now.getMonth() + 1) && year === now.getFullYear();
 
-    // Get month details
-    const firstDay = new Date(year, month, 1).getDay();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const monthName = now.toLocaleString('default', { month: 'long' });
-
-    // Hijri Info
-    const hijri = state.hijri;
-
+    // Show loading skeleton
     contentArea.innerHTML = `
         <div style="animation: entrance 0.6s var(--anim-spring) both;">
             <button class="btn-back" onclick="window.app.loadScreen('dashboard')">← Dashboard</button>
-            
-            <div class="glass-card" style="margin-bottom: 2rem; padding: 2.5rem; text-align: center; background: linear-gradient(135deg, rgba(var(--primary-blue-rgb), 0.1), transparent); border: 1px solid var(--border-color);">
-                <div style="font-size: 0.85rem; font-weight: 800; color: var(--accent-gold); text-transform: uppercase; letter-spacing: 0.2em; margin-bottom: 1rem;">Current Date</div>
-                <h2 style="font-size: 2.5rem; margin-bottom: 0.5rem; color: var(--text-primary);">${hijri.day} ${hijri.month.en} ${hijri.year}</h2>
-                <p style="color: var(--text-secondary); opacity: 0.8; font-weight: 600;">${monthName} ${year}</p>
-            </div>
-
-            <div class="glass-card" style="padding: 2rem;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2.5rem;">
-                    <h3 style="margin: 0; font-size: 1.25rem; font-weight: 800;">${monthName} ${year}</h3>
-                    <div style="display: flex; gap: 0.75rem;">
-                        <button class="dhikr-chip" style="padding: 0.6rem 1rem;">←</button>
-                        <button class="dhikr-chip" style="padding: 0.6rem 1rem;">→</button>
-                    </div>
-                </div>
-
-                <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 1rem; text-align: center;">
-                    ${['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map(d => `
-                        <div style="font-size: 0.65rem; font-weight: 800; color: var(--text-muted); opacity: 0.5; letter-spacing: 0.1em;">${d}</div>
-                    `).join('')}
-                    
-                    ${Array(firstDay).fill(null).map(() => `<div></div>`).join('')}
-                    
-                    ${Array(daysInMonth).fill(null).map((_, i) => {
-        const day = i + 1;
-        const isToday = day === now.getDate();
-        // Example highlights for Sunnah fasts
-        const isSunnah = (new Date(year, month, day).getDay() === 1 || new Date(year, month, day).getDay() === 4);
-        const isWhiteDay = [13, 14, 15].includes(day); // Approx for demo
-
-        return `
-                            <div style="aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; border-radius: 16px; background: ${isToday ? 'var(--primary-blue)' : 'rgba(255,255,255,0.03)'}; color: ${isToday ? '#fff' : 'var(--text-primary)'}; border: 1px solid ${isToday ? 'var(--primary-blue)' : 'var(--glass-border)'}; cursor: pointer; transition: all 0.2s ease;">
-                                <span style="font-weight: 800; font-size: 1rem;">${day}</span>
-                                ${isSunnah || isWhiteDay ? `<div style="position: absolute; bottom: 6px; width: 4px; height: 4px; border-radius: 50%; background: ${isToday ? '#fff' : 'var(--accent-gold)'};"></div>` : ''}
-                            </div>
-                        `;
-    }).join('')}
-                </div>
-            </div>
-
-            <div class="glass-card" style="margin-top: 2rem;">
-                <h3 class="section-title">Key Spiritual Dates</h3>
-                <div style="display: flex; flex-direction: column; gap: 1.25rem;">
-                    <div style="display: flex; align-items: center; gap: 1rem;">
-                        <div style="width: 40px; height: 40px; background: rgba(245, 158, 11, 0.15); color: var(--accent-gold); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem;">✨</div>
-                        <div>
-                            <div style="font-size: 0.9rem; font-weight: 800; color: var(--text-primary);">Ayyam al-Bidh (White Days)</div>
-                            <div style="font-size: 0.75rem; color: var(--text-muted);">Recommended fasting on 13, 14, and 15 of each lunar month.</div>
-                        </div>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 1rem;">
-                        <div style="width: 40px; height: 40px; background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem;">🌙</div>
-                        <div>
-                            <div style="font-size: 0.9rem; font-weight: 800; color: var(--text-primary);">Monday & Thursday Sunnah</div>
-                            <div style="font-size: 0.75rem; color: var(--text-muted);">The Prophet (PBUH) used to fast on these days.</div>
-                        </div>
-                    </div>
-                </div>
+            <div class="glass-card" style="margin-bottom: 2rem; padding: 2.5rem; text-align: center; border: 1px solid var(--border-color);">
+                <div class="loading-spinner" style="margin: 0 auto;"></div>
+                <p style="color: var(--text-muted); margin-top: 1rem;">Syncing Calendar Data...</p>
             </div>
         </div>
     `;
+
+    try {
+        const { city, country } = state.location;
+        const { method, school } = state.settings;
+        
+        // Check local cache first to avoid rate limiting
+        const cacheKey = `calendar_${year}_${month}`;
+        let data;
+        
+        if (state[cacheKey]) {
+            data = state[cacheKey];
+        } else {
+            const adj = state.settings.hijriOffset || 0;
+            const res = await fetch(`https://api.aladhan.com/v1/calendarByCity/${year}/${month}?city=${city}&country=${country}&method=${method}&school=${school}&adj=${adj}`);
+            const json = await res.json();
+            if (json.code === 200) {
+                data = json.data;
+                state[cacheKey] = data; // cache for session
+            } else {
+                throw new Error("API Error");
+            }
+        }
+
+        const dateObj = new Date(year, month - 1, 1);
+        const firstDay = dateObj.getDay();
+        const monthName = dateObj.toLocaleString('default', { month: 'long' });
+        
+        // Grab Hijri Info from first day of month just for header
+        const hijriHeader = isCurrentMonth && state.hijri ? state.hijri : data[0].date.hijri;
+
+        contentArea.innerHTML = `
+            <div style="animation: entrance 0.6s var(--anim-spring) both;">
+                <button class="btn-back" onclick="window.app.loadScreen('dashboard')">← Dashboard</button>
+                
+                <div class="glass-card" style="margin-bottom: 2rem; padding: 2.5rem; text-align: center; background: linear-gradient(135deg, rgba(var(--primary-blue-rgb), 0.1), transparent); border: 1px solid var(--border-color);">
+                    <div style="font-size: 0.85rem; font-weight: 800; color: var(--accent-gold); text-transform: uppercase; letter-spacing: 0.2em; margin-bottom: 1rem;">${isCurrentMonth ? 'Current Date' : 'Viewing Month'}</div>
+                    <h2 style="font-size: 2.5rem; margin-bottom: 0.5rem; color: var(--text-primary);">${isCurrentMonth ? hijriHeader.day : hijriHeader.month.en} ${isCurrentMonth ? hijriHeader.month.en : ''} ${hijriHeader.year}</h2>
+                    <p style="color: var(--text-secondary); opacity: 0.8; font-weight: 600;">${monthName} ${year}</p>
+                </div>
+
+                <div class="glass-card" style="padding: 1.5rem; @media(min-width: 768px) { padding: 2rem; }">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+                        <h3 style="margin: 0; font-size: 1.25rem; font-weight: 800;">${monthName} ${year}</h3>
+                        <div style="display: flex; gap: 0.75rem;">
+                            <button class="dhikr-chip" style="padding: 0.6rem 1rem;" onclick="window.app.navigateCalendar(-1)">←</button>
+                            ${!isCurrentMonth ? `<button class="dhikr-chip" style="padding: 0.6rem 1rem;" onclick="window.app.navigateCalendar('now')">Today</button>` : ''}
+                            <button class="dhikr-chip" style="padding: 0.6rem 1rem;" onclick="window.app.navigateCalendar(1)">→</button>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.5rem; text-align: center;">
+                        ${['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map(d => `
+                            <div style="font-size: 0.65rem; font-weight: 800; color: var(--text-muted); opacity: 0.5; letter-spacing: 0.1em; padding-bottom: 0.5rem;">${d}</div>
+                        `).join('')}
+                        
+                        ${Array(firstDay).fill(null).map(() => `<div></div>`).join('')}
+                        
+                        ${data.map((dayData, i) => {
+                            const day = i + 1;
+                            const isToday = isCurrentMonth && day === now.getDate();
+                            const isSunnah = (new Date(year, month - 1, day).getDay() === 1 || new Date(year, month - 1, day).getDay() === 4);
+                            
+                            const hijriDayVal = parseInt(dayData.date.hijri.day, 10);
+                            const isWhiteDay = [13, 14, 15].includes(hijriDayVal);
+                            
+                            // Parse timings
+                            const fajr = dayData.timings.Fajr.split(' ')[0];
+                            const maghrib = dayData.timings.Maghrib.split(' ')[0];
+
+                            return `
+                                <div style="display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 0.4rem; position: relative; border-radius: 12px; background: ${isToday ? 'var(--primary-blue)' : 'rgba(255,255,255,0.03)'}; color: ${isToday ? '#fff' : 'var(--text-primary)'}; border: 1px solid ${isToday ? 'var(--primary-blue)' : 'var(--glass-border)'}; transition: all 0.2s ease; min-height: 80px;">
+                                    <div style="display: flex; justify-content: space-between; width: 100%; align-items: flex-start;">
+                                        <span style="font-weight: 800; font-size: 0.95rem;">${day}</span>
+                                        <span style="font-size: 0.65rem; color: ${isToday ? 'rgba(255,255,255,0.8)' : 'var(--accent-gold)'}; font-weight: 700;">${hijriDayVal}</span>
+                                    </div>
+                                    <div style="display: flex; flex-direction: column; width: 100%; gap: 2px; margin-top: auto;">
+                                        <div style="font-size: 0.6rem; color: ${isToday ? 'rgba(255,255,255,0.9)' : 'var(--text-secondary)'}; background: ${isToday ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.04)'}; border-radius: 4px; padding: 2px 4px; display: flex; justify-content: space-between;">
+                                            <span>Suh.</span> <strong>${fajr}</strong>
+                                        </div>
+                                        <div style="font-size: 0.6rem; color: ${isToday ? 'rgba(255,255,255,0.9)' : 'var(--text-secondary)'}; background: ${isToday ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.04)'}; border-radius: 4px; padding: 2px 4px; display: flex; justify-content: space-between;">
+                                            <span>Ift.</span> <strong>${maghrib}</strong>
+                                        </div>
+                                    </div>
+                                    ${isSunnah || isWhiteDay ? `<div style="position: absolute; top: -3px; right: -3px; width: 8px; height: 8px; border-radius: 50%; background: ${isToday ? '#fff' : 'var(--accent-gold)'}; box-shadow: 0 0 5px rgba(245, 158, 11, 0.5);"></div>` : ''}
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+
+                <div class="glass-card" style="margin-top: 2rem;">
+                    <h3 class="section-title">Key Spiritual Dates</h3>
+                    <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+                        <div style="display: flex; align-items: center; gap: 1rem;">
+                            <div style="width: 40px; height: 40px; background: rgba(245, 158, 11, 0.15); color: var(--accent-gold); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem;">✨</div>
+                            <div>
+                                <div style="font-size: 0.9rem; font-weight: 800; color: var(--text-primary);">Ayyam al-Bidh (White Days)</div>
+                                <div style="font-size: 0.75rem; color: var(--text-muted);">Recommended fasting on 13, 14, and 15 of each lunar month.</div>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 1rem;">
+                            <div style="width: 40px; height: 40px; background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem;">🌙</div>
+                            <div>
+                                <div style="font-size: 0.9rem; font-weight: 800; color: var(--text-primary);">Monday & Thursday Sunnah</div>
+                                <div style="font-size: 0.75rem; color: var(--text-muted);">The Prophet (PBUH) used to fast on these days.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    } catch (e) {
+        console.error("Calendar fetch error", e);
+        contentArea.innerHTML = `
+            <div style="animation: entrance 0.6s var(--anim-spring) both;">
+                <button class="btn-back" onclick="window.app.loadScreen('dashboard')">← Dashboard</button>
+                <p style="text-align: center; color: var(--text-muted); padding: 2rem;">Failed to load calendar data. Please check your connection.</p>
+            </div>
+        `;
+    }
+}
+
+function navigateCalendar(dir) {
+    if (dir === 'now') {
+        state.calendarView = {
+            month: new Date().getMonth() + 1,
+            year: new Date().getFullYear()
+        };
+    } else {
+        let newMonth = state.calendarView.month + dir;
+        let newYear = state.calendarView.year;
+        if (newMonth > 12) {
+            newMonth = 1;
+            newYear++;
+        } else if (newMonth < 1) {
+            newMonth = 12;
+            newYear--;
+        }
+        state.calendarView = { month: newMonth, year: newYear };
+    }
+    renderCalendar();
 }
 
 function renderDuas(selectedCat = 'all') {
@@ -2272,24 +2469,49 @@ function renderDuas(selectedCat = 'all') {
 
     const categories = [
         { id: 'all', name: 'All Duas', icon: '✨' },
-        { id: 'daily', name: 'Daily', icon: '☀️' },
-        { id: 'salah', name: 'After Salah', icon: '📿' },
-        { id: 'protection', name: 'Protection', icon: '🛡️' },
-        { id: 'travel', name: 'Travel', icon: '✈️' },
-        { id: 'comfort', name: 'Comfort', icon: '🤲' },
+        { id: 'morning_dhikr', name: 'Morning Dhikr', icon: '🌅' },
+        { id: 'evening_dhikr', name: 'Evening Dhikr', icon: '🌇' },
+        { id: 'before_sleep_dhikr', name: 'Before Sleep', icon: '🛏️' },
+        { id: 'salah_dhikr', name: 'Salah Dhikr', icon: '🕌' },
+        { id: 'after_salah_dhikr', name: 'After Salah', icon: '🤲' },
+        { id: 'ruqyah_illness', name: 'Ruqyah Illness', icon: '🩺' },
+        { id: 'praises_of_allah', name: 'Praises of Allah', icon: '🌟' },
+        { id: 'salawat', name: 'Salawat', icon: '💖' },
+        { id: 'istighfar', name: 'Istighfar', icon: '😢' },
+        { id: 'dhikr_for_all_time', name: 'Dhikr All Time', icon: '⏳' },
+        { id: 'quranic_duas', name: 'Quranic Duas', icon: '📖' },
+        { id: 'sunnah_duas', name: 'Sunnah Duas', icon: '📜' },
+        { id: 'waking_up', name: 'Waking Up', icon: '🥱' },
+        { id: 'nightmares', name: 'Nightmares', icon: '😰' },
+        { id: 'clothes', name: 'Clothes', icon: '👕' },
+        { id: 'lavatory_wudu', name: 'Lavatory Wudu', icon: '💧' },
+        { id: 'food_drinks', name: 'Food & Drinks', icon: '🍽️' },
+        { id: 'home', name: 'Home', icon: '🏠' },
+        { id: 'adhan_masjid', name: 'Adhan & Masjid', icon: '🕌' },
+        { id: 'istikharah', name: 'Istikharah', icon: '🧭' },
+        { id: 'gatherings', name: 'Gatherings', icon: '👥' },
+        { id: 'difficulties', name: 'Difficulties', icon: '🤲' },
+        { id: 'protection_of_iman', name: 'Protection of Iman', icon: '🛡️' },
+        { id: 'hajj_umrah', name: 'Hajj & Umrah', icon: '🕋' },
+        { id: 'travelling', name: 'Travelling', icon: '✈️' },
+        { id: 'money_shopping', name: 'Money Shopping', icon: '💰' },
+        { id: 'social_interactions', name: 'Social Interaction', icon: '🤝' },
+        { id: 'marriage_children', name: 'Marriage Children', icon: '💍' },
+        { id: 'death', name: 'Death', icon: '🪦' },
+        { id: 'nature', name: 'Nature', icon: '🌿' },
         { id: 'parents', name: 'Parents', icon: '❤️' }
     ];
 
     const duas = [
         {
-            cat: 'daily',
+            cat: 'waking_up',
             title: 'Waking Up',
             arabic: 'الْحَمْدُ لِلَّهِ الَّذِي أَحْيَانَا بَعْدَ مَا أَمَاتَنَا وَإِلَيْهِ النُّشُورُ',
             translit: 'Alhamdu lillahil-ladhi ahyana ba\'da ma amatana wa ilaihin-nushur',
             trans: 'All praise is for Allah who gave us life after having taken it from us and unto Him is the resurrection.'
         },
         {
-            cat: 'daily',
+            cat: 'istighfar',
             title: 'Sayyidul Istighfar (Chief Forgiveness)',
             arabic: 'اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَهَ إِلَّا أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَى عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ لَكَ بِذَنْبِي فَاغْفِرْ لِي فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ',
             translit: 'Allahumma Anta Rabbi la ilaha illa Anta, khalaqtani wa ana \'abduka, wa ana \'ala \'ahdika wa wa\'dika mastata\'tu, a\'udhu bika min sharri ma sana\'tu, abu\'u laka bini\'matika \'alayya, wa abu\'u laka bidhanbi faghfir li fa-innahu la yaghfirudh-dhunuba illa Anta',
@@ -2303,32 +2525,165 @@ function renderDuas(selectedCat = 'all') {
             trans: 'My Lord, have mercy upon them as they brought me up [when I was] small.'
         },
         {
-            cat: 'protection',
+            cat: 'morning_dhikr',
             title: 'Morning/Evening Protection',
             arabic: 'بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ',
             translit: 'Bismillahi-lladhi la yadurru ma\'as-mihi shai\'un fil-ardi wa la fis-sama\'i wa Huwas-Sami\'ul-\'Alim',
             trans: 'In the Name of Allah, Who with His Name nothing can cause harm in the earth nor in the heavens, and He is the All-Hearing, the All-Knowing.'
         },
         {
-            cat: 'travel',
+            cat: 'travelling',
             title: 'Travel Dua',
             arabic: 'سُبْحَانَ الَّذِي سَخَّرَ لَنَا هَذَا وَمَا كُنَّا لَهُ مُقْرِنِينَ وَإِنَّا إِلَى رَبِّنَا لَمُنْقَلِبُونَ',
             translit: 'Subhanalladhi sakh-khara lana hadha wa ma kunna lahu muqrineen. Wa inna ila Rabbina lamunqaliboon',
             trans: 'Glory is to Him who has subjected this to us, and we could not have [otherwise] subdued it. And indeed we, to our Lord, will surely return.'
         },
         {
-            cat: 'comfort',
+            cat: 'difficulties',
             title: 'Dua of Prophet Yunus',
             arabic: 'لَا إِلَهَ إِلَّا أَنْتَ سُبْحَانَكَ إِنِّي كُنْتُ مِنَ الظَّالِمِينَ',
             translit: 'La ilaha illa Anta subhanaka inni kuntu minaz-zalimin',
             trans: 'There is no deity except You; exalted are You. Indeed, I have been of the wrongdoers.'
         },
         {
-            cat: 'salah',
+            cat: 'after_salah_dhikr',
             title: 'After Salah (Tasbih)',
             arabic: 'سُبْحَانَ اللَّهِ (33x)، الْحَمْدُ لِلَّهِ (33x)، اللَّهُ أَكْبَرُ (33x)',
             translit: 'SubhanAllah, AlHamdulillah, AllahuAkbar',
             trans: 'Glory be to Allah, Praise be to Allah, Allah is the Greatest.'
+        },
+        {
+            cat: 'ruqyah_illness',
+            title: 'Reciting Surah Al-Fatihah for Healing',
+            arabic: 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ',
+            translit: 'Bismillahir-Rahmanir-Rahim',
+            trans: 'In the name of Allah, the Most Gracious, the Most Merciful'
+        },
+        {
+            cat: 'praises_of_allah',
+            title: 'Tahajjud Prayer Dua',
+            arabic: 'اللهم لك الحمد أنت نور السماوات والأرض',
+            translit: 'Allahumma lakal hamdu anta nurus samawati wal ard',
+            trans: 'O Allah, to You belongs all praise. You are the light of the heavens and the earth'
+        },
+        {
+            cat: 'salawat',
+            title: 'Dua for Blessings',
+            arabic: 'اللهم صل على محمد',
+            translit: 'Allahumma salli ala Muhammad',
+            trans: 'O Allah, send blessings upon Muhammad'
+        },
+        {
+            cat: 'istighfar',
+            title: 'Istighfar Dua',
+            arabic: 'اللَّهُمَّ أَنْتَ رَبِّي لا إِلَهَ إِلا أَنْتَ خَلَقْتَنِي وَأَنَا عَبْدُكَ وَأَنَا عَلَى عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ وَأَبُوءُ بِذَنْبِي فَاغْفِرْ لِي ذُنُوبِي جَمِيعًا إِنَّهُ لا يَغْفِرُ الذُّنُوبَ إِلا أَنْتَ',
+            translit: 'Allahumma anta rabbi, la ilaha illa anta, khalaqtani wa ana abduka, wa ana ala ahdika wa waadika ma astata\'t, abuu\'u laka bi ni\'matika alayya wa abuu\'u bi dhanbi, faghfir li dhunubi jami\'an, innahu la yaghfiru dh-dhunuba illa anta',
+            trans: 'O Allah, You are my Lord, there is no god but You. You created me and I am Your servant, and I am upon Your covenant and Your promise as much as I can. I seek refuge in You from the evil of what I have done, and I acknowledge Your favor upon me, and I acknowledge my sin. Forgive me all my sins, for indeed, no one forgives sins except You.'
+        },
+        {
+            cat: 'dhikr_for_all_time',
+            title: 'Best Dhikr',
+            arabic: 'لا إله إلا الله',
+            translit: 'La ilaha illallah',
+            trans: 'There is no deity except Allah'
+        },
+        {
+            cat: 'quranic_duas',
+            title: 'Dua for Guidance',
+            arabic: 'رَبَّنَا آتِنَا مِن لَّدُنكَ رَحْمَةً وَهَيِّئْ لَنَا مِنْ أَمْرِنَا رَشَدًا',
+            translit: 'Rabbanā ātinā min ladunka raḥmatan wa hayyi lanā min amrinā rashada',
+            trans: 'Our Lord, give us mercy from Yourself and prepare for us from our affairs guidance'
+        },
+        {
+            cat: 'sunnah_duas',
+            title: 'Superior Manner of Seeking Forgiveness',
+            arabic: 'اللَّهُمَّ أَنْتَ رَبِّي لا إِلَهَ إِلا أَنْتَ',
+            translit: 'Allaahumma anta rabbi laa ilaaha illa anta...',
+            trans: 'O Allah, You are my Lord, there is no god except You...'
+        },
+        {
+            cat: 'nightmares',
+            title: 'Dua for Nightmares',
+            arabic: 'أَعُوذُ بِكَلِمَاتِ اللَّهِ التَّامَّاتِ مِنْ غَضَبِهِ وَعِقَابِهِ وَشَرِّ عِبَادِهِ وَمِنْ هَمَزَاتِ الشَّيَاطِينِ وَأَنْ يَحْضُرُونِ',
+            translit: 'A\'udhu bikalimatillahit-tammati min ghadhabihi wa \'iqabihi wa sharri \'ibadihi, wa min hamazatish-shayatini wa an yahdhurun',
+            trans: 'I seek refuge in the perfect words of Allah from His anger and punishment, and from the evil of His slaves, and from the taunts of the devils and from their presence.'
+        },
+        {
+            cat: 'lavatory_wudu',
+            title: 'Dua for Lavatory',
+            arabic: 'اللَّهُمَّ إِنِّي أَعُوذُ بِكَ مِنَ الْخُبُثِ وَالْخَبَائِثِ',
+            translit: 'Allaahumma inni aoodhu bika minal khubuthi wal khabaaith',
+            trans: 'O Allah, I seek refuge with You from the male and female devils'
+        },
+        {
+            cat: 'istikharah',
+            title: 'Istikharah Dua',
+            arabic: 'اللَّهُمَّ إِنِّي أَسْتَخِيرُكَ بِعِلْمِكَ وَأَسْتَقْدِرُكَ بِقُدْرَتِكَ',
+            translit: 'Allahumma inni astakhiruka bi\'ilmika wa astaqdiruka biqudratika...',
+            trans: 'O Allah, I seek Your guidance by virtue of Your knowledge, and I seek ability by virtue of Your power...'
+        },
+        {
+            cat: 'difficulties',
+            title: 'Dua in Difficulties',
+            arabic: 'اللَّهُمَّ إِنِّي أَعُوذُ بِكَ مِنَ الشَّرِّ كُلِّهِ',
+            translit: 'Allahumma inni afuz min ash-sharri kullihi',
+            trans: 'O Allah, I seek refuge in You from all evil'
+        },
+        {
+            cat: 'protection_of_iman',
+            title: 'Protection of Iman',
+            arabic: 'اللَّهُمَّ إِنِّي أَعُوذُ بِكَ مِنْ عِلْمٍ لَا يَنْفَعُ وَمِنْ قَلْبٍ لَا يَخْشَعُ وَمِنْ نَفْسٍ لَا تَشْبَعُ وَمِنْ دَعْوَةٍ لَا يُستَجَابُ لَهَا',
+            translit: 'Allahumma inni a\'udhu bika min \'ilmin la yanfa\'u wa min qalbin la yakhsha\'u wa min nafsin la tashba\'u wa min da\'watin la yustajabu laha',
+            trans: 'O Allah, I seek refuge in You from knowledge that does not benefit, from a heart that does not fear, from a soul that does not feel satisfied, and from a supplication that is not answered'
+        },
+        {
+            cat: 'hajj_umrah',
+            title: 'After Hajj',
+            arabic: 'اللَّهُ أَكْبَرُ اللَّهُ أَكْبَرُ لاَ إِلَٰهَ إِلَّا اللَّهُ وَاللَّهُ أَكْبَرُ اللَّهُ أَكْبَرُ وَلِلَّٰهِ الْحَمْدُ',
+            translit: 'Allahu akbar, Allahu akbar, la ilaha illallahu wallahu akbar, Allahu akbar, wa lillahil hamd',
+            trans: 'Allah is the greatest, Allah is the greatest, there is no deity except Allah, and Allah is the greatest, Allah is the greatest, and to Allah belongs all praise'
+        },
+        {
+            cat: 'travelling',
+            title: 'For Travelling',
+            arabic: 'سُبْحَانَ الَّذِي سَخَّرَ لَنَا هَذَا وَمَا كُنَّا لَهُ مُقْرِنِينَ',
+            translit: 'Subhanalladhi sakhkhara lana hadha wa ma kunna lahu muqrinin',
+            trans: 'How perfect is the One Who has given us control over this; we could not have done it by ourselves.'
+        },
+        {
+            cat: 'money_shopping',
+            title: 'Marketplace Dua',
+            arabic: 'لا إله إلا الله',
+            translit: 'La ilaha illallahu',
+            trans: 'There is no god but Allah'
+        },
+        {
+            cat: 'social_interactions',
+            title: 'When Sneezing',
+            arabic: 'الْحَمْدُ لِلَّهِ',
+            translit: 'Alhamdu lillah',
+            trans: 'Praise be to Allah'
+        },
+        {
+            cat: 'marriage_children',
+            title: 'Marriage Congratulation',
+            arabic: 'بَارَكَ اللَّهُ لَكَ، وَبَارَكَ عَلَيْكَ، وَجَمَعَ بَيْنَكُمَا فِي خَيْرٍ',
+            translit: 'Baarakallaahu laka, wa baaraka `alayka, wa jama`a baynakuma fi khayr',
+            trans: 'May Allah bless you, and bless you with good, and bring goodness between you'
+        },
+        {
+            cat: 'death',
+            title: 'Dua in difficulty',
+            arabic: 'اللَّهُمَّ إِنِّي أَسْأَلُكَ الْعَفْوَ وَالْعَافِيَةَ',
+            translit: 'Allahumma inni asaluka alafwa walafyah',
+            trans: 'O Allah, I ask You for pardon and well-being'
+        },
+        {
+            cat: 'nature',
+            title: 'Dua for Rain',
+            arabic: 'اللَّهُمَّ صَيِّبًا نَافِعًا',
+            translit: 'Allahumma sayyiban nafi\'an',
+            trans: 'O Allah, (let this rain be) beneficial'
         }
     ];
 
@@ -2385,6 +2740,7 @@ function renderToolkitHub() {
     const tools = [
         { id: 'mushaf', name: t('mushaf'), icon: '📜', color: '#10b981', desc: 'Read Original Script' },
         { id: 'quran', name: t('quran'), icon: '📖', color: '#38bdf8', desc: 'Translation & Audio' },
+        { id: 'hadith', name: 'Hadith', icon: '📚', color: '#fbbf24', desc: 'Sahih Muslim Collection' },
         { id: 'tasbih', name: t('tasbih'), icon: '📿', color: '#fbbf24', desc: 'Track your Dhikr' },
         { id: 'tracker', name: t('tracker'), icon: '📈', color: '#818cf8', desc: 'Salah & Habits' },
         { id: 'qaza', name: t('qaza'), icon: '⏳', color: '#f43f5e', desc: 'Missed Prayers' },
@@ -2793,14 +3149,36 @@ window.app.setSearchType = (type) => {
 };
 
 
-function renderQuiz() {
-    const questions = [
-        { q: "What is the first month of the Islamic calendar?", a: ["Muharram", "Ramadan", "Shawwal", "Safar"], c: 0 },
-        { q: "How many chapters (Surahs) are in the Quran?", a: ["110", "114", "120", "100"], c: 1 },
-        { q: "Which prophet is known as 'Khalilullah' (Friend of Allah)?", a: ["Musa", "Isa", "Ibrahim", "Nuh"], c: 2 },
-        { q: "What is the shortest Surah in the Quran?", a: ["Al-Ikhlas", "Al-Asr", "Al-Kawthar", "An-Nas"], c: 2 },
-        { q: "Which companion is known as 'The Sword of Allah'?", a: ["Umar ibn al-Khattab", "Ali ibn Abi Talib", "Khalid ibn al-Walid", "Hamza ibn Abdul-Muttalib"], c: 2 }
-    ];
+async function renderQuiz() {
+    contentArea.innerHTML = `
+        <div style="animation: entrance 0.6s var(--anim-spring) both; text-align: center; margin-top: 4rem;">
+            <div style="width: 40px; height: 40px; border: 4px solid rgba(var(--primary-blue-rgb), 0.2); border-top-color: var(--primary-blue); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1.5rem;"></div>
+            <p style="color: var(--text-muted); font-weight: 600;">Generating new questions...</p>
+        </div>
+    `;
+
+    let questions = [];
+    try {
+        const res = await fetch('/api/quiz');
+        if (res.ok) {
+            const data = await res.json();
+            if (data && data.questions) {
+                questions = data.questions;
+            }
+        }
+    } catch(e) {
+        console.warn("Could not fetch quiz questions dynamically", e);
+    }
+
+    if (!questions || questions.length === 0) {
+        questions = [
+            { q: "What is the first month of the Islamic calendar?", a: ["Muharram", "Ramadan", "Shawwal", "Safar"], c: 0 },
+            { q: "How many chapters (Surahs) are in the Quran?", a: ["110", "114", "120", "100"], c: 1 },
+            { q: "Which prophet is known as 'Khalilullah' (Friend of Allah)?", a: ["Musa", "Isa", "Ibrahim", "Nuh"], c: 2 },
+            { q: "What is the shortest Surah in the Quran?", a: ["Al-Ikhlas", "Al-Asr", "Al-Kawthar", "An-Nas"], c: 2 },
+            { q: "Which companion is known as 'The Sword of Allah'?", a: ["Umar ibn al-Khattab", "Ali ibn Abi Talib", "Khalid ibn al-Walid", "Hamza ibn Abdul-Muttalib"], c: 2 }
+        ];
+    }
 
     let currentQ = 0;
     let score = 0;
@@ -3043,6 +3421,178 @@ function renderHadithDetail(num) {
     `;
 }
 
+// --- Hadith Logic ---
+
+let sahihMuslimBooks = null;
+
+async function renderHadithScreen() {
+    screenTitle.textContent = "Sahih Muslim Books";
+    contentArea.innerHTML = `
+        <div class="btn-back" onclick="window.app.loadScreen('toolkit')">← Back to Toolkit</div>
+        <div class="loading-spinner" style="margin: 5rem auto;"></div>
+    `;
+
+    try {
+        if (!sahihMuslimBooks) {
+            const res = await fetch('sahih_muslim_books.json');
+            sahihMuslimBooks = await res.json();
+        }
+
+        contentArea.innerHTML = `
+            <div style="animation: entrance 0.6s var(--anim-spring) both;">
+                <div class="btn-back" onclick="window.app.loadScreen('toolkit')">← Back to Toolkit</div>
+                
+                <div class="glass-card" style="text-align: center; margin-bottom: 2rem; padding: 2rem; position: relative; overflow: hidden; border-radius: 24px; border: 1px solid var(--glass-border); background: var(--glass-bg);">
+                    <div style="font-size: 3rem; margin-bottom: 1rem; filter: drop-shadow(0 0 10px rgba(251, 191, 36, 0.2));">📚</div>
+                    <h2 style="color: var(--primary-blue); margin-bottom: 0.5rem; font-weight: 850;">Sahih Muslim</h2>
+                    <p style="color: var(--text-secondary); font-size: 0.95rem; max-width: 600px; margin: 0 auto; line-height: 1.6; opacity: 0.9;">
+                        Sahih Muslim is one of the most authentic collections of Hadith (sayings and actions of the Prophet Muhammad ﷺ), compiled by Imam Muslim ibn al-Hajjaj. It contains 57 books covering faith, purification, prayers, transactions, and more.
+                    </p>
+                </div>
+
+                <div class="glass-card" style="margin-bottom: 2rem; padding: 1.25rem; border-radius: 20px;">
+                    <div class="search-bar" style="margin: 0; display: flex; gap: 0.75rem;">
+                        <div style="flex: 1; position: relative;">
+                            <input type="text" id="hadith-search-input" placeholder="Search books by title..." style="width: 100%; padding: 1rem 1.25rem 1rem 3rem; border-radius: 16px; background: var(--bg-main); border: 1px solid var(--border-color); color: var(--text-primary); outline: none; font-size: 0.95rem;" onkeyup="window.app.filterHadithBooks(this.value)">
+                            <div style="position: absolute; left: 1.2rem; top: 50%; transform: translateY(-50%); opacity: 0.5;">🔍</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="hadith-books-list" class="item-list">
+                    ${sahihMuslimBooks.map((book, idx) => `
+                        <div class="glass-card topic-card" onclick="window.app.loadHadithBook(${idx})" style="padding: 1.25rem; margin-bottom: 1rem; cursor: pointer; display: flex; align-items: center; justify-content: space-between; transition: all 0.2s var(--anim-ease); border-radius: 18px; border: 1px solid var(--glass-border);">
+                            <div style="display: flex; align-items: center; gap: 1rem; text-align: left;">
+                                <div style="width: 38px; height: 38px; background: rgba(56, 189, 248, 0.08); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-weight: 800; color: var(--accent-primary); font-size: 0.85rem; border: 1px solid rgba(56, 189, 248, 0.15);">
+                                    ${book.number || 'Intro'}
+                                </div>
+                                <div>
+                                    <h4 style="margin: 0; color: var(--text-primary); font-size: 0.95rem; font-weight: 750;">${book.english}</h4>
+                                    <span style="font-size: 0.72rem; color: var(--text-muted); font-weight: 700; opacity: 0.8;">Hadiths ${book.start} - ${book.end}</span>
+                                </div>
+                            </div>
+                            <span class="arabic-text" style="font-size: 1.15rem; color: var(--text-secondary); text-align: right;">${book.arabic}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    } catch (e) {
+        console.error("Hadith Books Load Error:", e);
+        contentArea.innerHTML = `
+            <div class="btn-back" onclick="window.app.loadScreen('toolkit')">← Back to Toolkit</div>
+            <p style="text-align: center; color: var(--text-muted); padding: 2rem;">Failed to load books. Please check your connection.</p>
+        `;
+    }
+}
+
+function filterHadithBooks(query) {
+    if (!sahihMuslimBooks) return;
+    const q = query.trim().toLowerCase();
+    const cards = document.querySelectorAll('#hadith-books-list .topic-card');
+    sahihMuslimBooks.forEach((book, idx) => {
+        const match = book.english.toLowerCase().includes(q) || book.arabic.toLowerCase().includes(q);
+        if (cards[idx]) {
+            cards[idx].style.display = match ? 'flex' : 'none';
+        }
+    });
+}
+
+async function loadHadithBook(idx) {
+    if (!sahihMuslimBooks || !sahihMuslimBooks[idx]) return;
+    const book = sahihMuslimBooks[idx];
+
+    screenTitle.textContent = book.english;
+    contentArea.innerHTML = `
+        <div class="btn-back" onclick="window.app.renderHadithScreen()">← Back to Sahih Muslim Books</div>
+        <div class="loading-spinner" style="margin: 5rem auto;"></div>
+        <p style="text-align: center; color: var(--text-muted); font-size: 0.85rem;">Loading Sahih Muslim — English & Arabic…</p>
+    `;
+
+    try {
+        // Fetch English and Arabic editions in parallel, reusing cache
+        const fetchEng = state.muslimHadiths
+            ? Promise.resolve(state.muslimHadiths)
+            : fetch('https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/eng-muslim.min.json')
+                .then(r => r.json())
+                .then(d => { state.muslimHadiths = d.hadiths; return d.hadiths; });
+
+        const fetchAra = state.muslimHadithsAra
+            ? Promise.resolve(state.muslimHadithsAra)
+            : fetch('https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/ara-muslim.min.json')
+                .then(r => r.json())
+                .then(d => { state.muslimHadithsAra = d.hadiths; return d.hadiths; });
+
+        const [engHadiths, araHadiths] = await Promise.all([fetchEng, fetchAra]);
+
+        // Build Arabic lookup by hadithnumber
+        const araMap = {};
+        araHadiths.forEach(h => { araMap[h.hadithnumber] = h.text || ''; });
+
+        // Filter to this book's range AND only hadiths that have English text
+        const bookHadiths = engHadiths.filter(h =>
+            h.hadithnumber >= book.start &&
+            h.hadithnumber <= book.end &&
+            h.text && h.text.trim() !== ''
+        );
+
+        contentArea.innerHTML = `
+            <div style="animation: entrance 0.6s var(--anim-spring) both;">
+                <div class="btn-back" onclick="window.app.renderHadithScreen()">← Back to Sahih Muslim Books</div>
+
+                <div class="glass-card" style="margin-bottom: 2rem; padding: 1.5rem; text-align: center; border-radius: 20px; border-left: 4px solid var(--accent-primary); background: var(--glass-bg); border-top: 1px solid var(--glass-border); border-right: 1px solid var(--glass-border); border-bottom: 1px solid var(--glass-border);">
+                    <h3 style="color: var(--primary-blue); margin: 0 0 0.4rem; font-weight: 850;">${book.english}</h3>
+                    <div class="arabic-text" style="font-size: 1.3rem; margin-bottom: 0.5rem; color: var(--text-secondary);">${book.arabic}</div>
+                    <p style="color: var(--text-muted); font-size: 0.75rem; font-weight: 700; margin: 0; opacity: 0.8;">Book ${book.number || 'Intro'} &bull; ${bookHadiths.length} Hadiths with translations</p>
+                </div>
+
+                <div class="item-list">
+                    ${bookHadiths.length === 0 ? `
+                        <div class="glass-card" style="text-align: center; color: var(--text-muted); padding: 3rem 1rem;">
+                            <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.4;">📭</div>
+                            <p>No English translations available for this section.</p>
+                        </div>
+                    ` : bookHadiths.map((h, i) => {
+                        const arabicText = araMap[h.hadithnumber] || '';
+                        const safeEng = h.text.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$');
+                        return `
+                        <div class="glass-card" style="padding: 1.75rem 1.5rem; margin-bottom: 1.25rem; border-radius: 20px; border: 1px solid var(--glass-border); background: var(--glass-bg); animation: slideUp 0.4s ease both; animation-delay: ${Math.min(i * 0.03, 0.3)}s;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 1px solid var(--glass-border); padding-bottom: 0.75rem;">
+                                <span style="font-weight: 800; color: var(--accent-gold); font-size: 0.8rem; display: flex; align-items: center; gap: 0.4rem;">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                                    Hadith ${h.hadithnumber}
+                                </span>
+                                <button class="profile-circle" onclick="window.app.shareContent('Sahih Muslim Hadith ${h.hadithnumber}', \`${safeEng}\`)" title="Share Hadith">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg>
+                                </button>
+                            </div>
+                            ${arabicText ? `
+                            <div class="arabic-text" style="font-size: 1.1rem; line-height: 2.1; color: var(--text-primary); text-align: right; direction: rtl; margin-bottom: 1rem; padding: 0.85rem 1rem; background: rgba(56,189,248,0.05); border-radius: 12px; border-right: 3px solid var(--accent-primary);">
+                                ${arabicText}
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; opacity: 0.5;">
+                                <div style="flex: 1; height: 1px; background: var(--glass-border);"></div>
+                                <span style="font-size: 0.65rem; font-weight: 800; letter-spacing: 0.1em; color: var(--text-muted);">TRANSLATION</span>
+                                <div style="flex: 1; height: 1px; background: var(--glass-border);"></div>
+                            </div>
+                            ` : ''}
+                            <p style="font-size: 0.9rem; line-height: 1.8; color: var(--text-secondary); margin: 0; text-align: left;">
+                                ${h.text}
+                            </p>
+                        </div>
+                    `}).join('')}
+                </div>
+            </div>
+        `;
+    } catch (e) {
+        console.error("Hadiths Load Error:", e);
+        contentArea.innerHTML = `
+            <div class="btn-back" onclick="window.app.renderHadithScreen()">← Back to Sahih Muslim Books</div>
+            <p style="text-align: center; color: var(--text-muted); padding: 2rem;">Failed to load hadith details. Please check your connection.</p>
+        `;
+    }
+}
+
 function renderTracker() {
     const tasks = [
         { id: 'fajr', label: 'Fajr Prayer', type: 'prayer' },
@@ -3166,11 +3716,14 @@ window.app.updateQaza = (id, delta) => {
 };
 
 // --- Offline Hijri Fallback (Kuwaiti Algorithm) ---
-function getOfflineHijri() {
-    const today = new Date();
-    let day = today.getDate();
-    let month = today.getMonth();
-    let year = today.getFullYear();
+function getOfflineHijri(date = new Date()) {
+    const adjDate = new Date(date.getTime());
+    const offset = state.settings && state.settings.hijriOffset !== undefined ? state.settings.hijriOffset : 1;
+    adjDate.setDate(adjDate.getDate() + offset);
+
+    let day = adjDate.getDate();
+    let month = adjDate.getMonth();
+    let year = adjDate.getFullYear();
 
     let m = month + 1;
     let y = year;
@@ -3209,9 +3762,10 @@ function getOfflineHijri() {
 
 async function fetchPrayerTimes() {
     try {
-        const { method, school } = state.settings;
+        const { method, school, hijriOffset } = state.settings;
         const { city, country } = state.location;
-        const res = await fetch(`https://api.aladhan.com/v1/timingsByCity?city=${city}&country=${country}&method=${method}&school=${school}`);
+        const adj = hijriOffset || 0;
+        const res = await fetch(`https://api.aladhan.com/v1/timingsByCity?city=${city}&country=${country}&method=${method}&school=${school}&adj=${adj}`);
         const data = await res.json();
         if (data.code === 200) {
             state.prayerTimes = data.data.timings;
@@ -3219,6 +3773,7 @@ async function fetchPrayerTimes() {
             state.coordinates = data.data.meta;
             localStorage.setItem('hijri_data', JSON.stringify(state.hijri));
             localStorage.setItem('prayer_times', JSON.stringify(state.prayerTimes));
+            updateDate(); // Synchronize sidebar date
             if (state.settings.dynamicPrayerTheme && typeof refreshPrayerTheme === 'function') refreshPrayerTheme();
             if (state.currentScreen === 'dashboard') renderDashboard();
         }
@@ -3751,7 +4306,7 @@ function renderQibla() {
     const qiblaDeg = (THREE_DEGREES(Math.atan2(y, x)) + 360) % 360;
 
     contentArea.innerHTML = `
-        <div class="qibla-container" style="display: grid; grid-template-columns: 1fr 1.2fr; gap: 2rem; align-items: start; animation: entrance 0.6s var(--anim-spring) both;">
+        <div class="qibla-container" style="display: flex; flex-direction: column; gap: 1.5rem; animation: entrance 0.6s var(--anim-spring) both;">
             <!-- LEFT: Compass -->
             <div style="display: flex; flex-direction: column; align-items: center;">
                 <div class="compass-outer" id="qibla-compass">
@@ -3785,7 +4340,7 @@ function renderQibla() {
                     </button>
                 </div>
                 
-                <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                <div id="qibla-prayer-list" style="display: flex; flex-direction: column; gap: 0.75rem;">
                     ${['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'].map(name => {
         const rawTime = state.prayerTimes ? state.prayerTimes[name] : null;
         const time = formatPrayerTime(rawTime);
@@ -3816,45 +4371,71 @@ function renderQibla() {
     const status = document.getElementById('qibla-status');
     if (!needle) return;
 
-    // Initial state
+    // Initial state — show static needle pointing to Qibla from North
     needle.style.transform = `rotate(${qiblaDeg}deg)`;
-    
+
     // Add Kaaba icon to needle
     needle.innerHTML = '<div class="kaaba-icon">🕋</div>';
 
+    let lastGoodHeading = null;
+
     const handleOrientation = (e) => {
-        let heading = e.webkitCompassHeading || (360 - e.alpha); // Adjust alpha for Android
-        if (typeof e.absolute !== 'undefined' && !e.absolute && typeof e.webkitCompassHeading === 'undefined') {
-            return;
+        let heading = null;
+
+        if (typeof e.webkitCompassHeading === 'number') {
+            // iOS: webkitCompassHeading is 0=North, increases clockwise. Direct use.
+            heading = e.webkitCompassHeading;
+        } else if (e.absolute === true && typeof e.alpha === 'number') {
+            // Android with deviceorientationabsolute: alpha is 0=North, increases counter-clockwise.
+            // Convert to clockwise: heading = (360 - alpha) % 360
+            heading = (360 - e.alpha) % 360;
+        } else if (typeof e.alpha === 'number') {
+            // Non-absolute deviceorientation fallback — less reliable, use if nothing else available
+            heading = (360 - e.alpha) % 360;
         }
 
-        if (heading !== null && heading !== undefined) {
-            outer.style.transform = `rotate(${-heading}deg)`;
-            
-            // Check if facing Qibla (within 5 degrees)
-            const currentDirection = (qiblaDeg - heading + 360) % 360;
-            const isFacing = currentDirection < 8 || currentDirection > 352;
-            
-            if (isFacing) {
-                status.innerHTML = `<span style="color: var(--accent-emerald); font-weight: 800;">✨ FACING QIBLA</span>`;
-                status.classList.add('facing-active');
-                if (!state._vibrated) {
-                    if (navigator.vibrate) navigator.vibrate(30);
-                    state._vibrated = true;
-                }
-            } else {
-                status.innerHTML = `<span style="opacity: 0.5;">Rotate to align</span>`;
-                status.classList.remove('facing-active');
-                state._vibrated = false;
+        if (heading === null) return;
+        lastGoodHeading = heading;
+
+        // Rotate the whole compass rose (dial) opposite to device heading
+        // This keeps N pointing to true North relative to the ground
+        outer.style.transform = `rotate(${-heading}deg)`;
+
+        // The needle always points to Qibla from true North.
+        // Since the dial rotates by -heading, the needle needs to compensate:
+        // needle rotates by (qiblaDeg - (-heading)) = qiblaDeg + heading ... no.
+        // Actually: needle is a child of outer. outer rotates -heading.
+        // We want needle to point at qiblaDeg absolute.
+        // So needle must rotate by: qiblaDeg - (-heading) = qiblaDeg + heading? No.
+        // needle world rotation = outer rotation + needle local rotation
+        // We want needle world = qiblaDeg
+        // outer rotation = -heading
+        // So: -heading + needle_local = qiblaDeg => needle_local = qiblaDeg + heading
+        needle.style.transform = `rotate(${qiblaDeg + heading}deg)`;
+
+        // Check if facing Qibla (within 8 degrees)
+        const diff = Math.abs(((heading - qiblaDeg) + 540) % 360 - 180);
+        const isFacing = diff < 8;
+
+        if (isFacing) {
+            status.innerHTML = `<span style="color: var(--accent-emerald); font-weight: 800;">✨ FACING QIBLA</span>`;
+            status.classList.add('facing-active');
+            if (!state._vibrated) {
+                if (navigator.vibrate) navigator.vibrate(30);
+                state._vibrated = true;
             }
+        } else {
+            status.innerHTML = `<span style="opacity: 0.5;">Rotate to align</span>`;
+            status.classList.remove('facing-active');
+            state._vibrated = false;
         }
     };
 
-    // Show Permission button for iOS
+    // Show Permission button for iOS 13+
     if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
         const permBtn = document.createElement('button');
         permBtn.className = 'btn-primary';
-        permBtn.style.cssText = 'position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2000;';
+        permBtn.style.cssText = 'margin-top: 1rem; width: 100%;';
         permBtn.textContent = 'Enable Compass';
         permBtn.onclick = () => {
             DeviceOrientationEvent.requestPermission().then(response => {
@@ -3864,11 +4445,24 @@ function renderQibla() {
                 }
             });
         };
-        outer.parentElement.style.position = 'relative';
-        outer.parentElement.appendChild(permBtn);
+        document.getElementById('qibla-status').after(permBtn);
     } else if (window.DeviceOrientationEvent) {
-        window.addEventListener('deviceorientationabsolute', handleOrientation, true);
-        window.addEventListener('deviceorientation', handleOrientation, true);
+        // Android: prefer absolute orientation event for accuracy
+        let absSupported = false;
+        const absHandler = (e) => {
+            if (e.absolute === true && e.alpha !== null) {
+                absSupported = true;
+                handleOrientation(e);
+            }
+        };
+        window.addEventListener('deviceorientationabsolute', absHandler, true);
+        // Fallback to non-absolute after 500ms if absolute never fired
+        setTimeout(() => {
+            if (!absSupported) {
+                window.removeEventListener('deviceorientationabsolute', absHandler, true);
+                window.addEventListener('deviceorientation', handleOrientation, true);
+            }
+        }, 500);
     }
 }
 
@@ -3963,12 +4557,56 @@ function applyBackground() {
 
 
 
+function updateDashboardPrayers() {
+    const list = document.getElementById('dashboard-prayer-list');
+    if (!list) return;
+    const prayerOrder = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+    const nextPrayer = getNextPrayer();
+    const prayerItemsHtml = state.prayerTimes ? prayerOrder.map(name => {
+        const rawTime = state.prayerTimes[name];
+        const time = formatPrayerTime(rawTime);
+        const isNext = nextPrayer && nextPrayer.name.includes(name);
+        return `
+            <div class="prayer-item ${isNext ? 'active' : ''}" style="color: ${isNext ? 'var(--accent-emerald)' : 'var(--text-secondary)'}">
+                <span>${name}</span>
+                <span style="font-weight: 700;">${time}</span>
+            </div>
+        `;
+    }).join('') : `<div style="text-align: center; color: var(--text-muted); font-size: 0.8rem;">Location required for accurate times</div>`;
+    list.innerHTML = prayerItemsHtml;
+}
+
+function updateQiblaPrayers() {
+    const list = document.getElementById('qibla-prayer-list');
+    if (!list) return;
+    const nextPrayer = getNextPrayer();
+    list.innerHTML = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'].map(name => {
+        const rawTime = state.prayerTimes ? state.prayerTimes[name] : null;
+        if (!rawTime) return '';
+        const time = formatPrayerTime(rawTime);
+        const isNext = nextPrayer && nextPrayer.name.includes(name);
+        return `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 1.1rem; background: ${isNext ? 'rgba(var(--primary-blue-rgb), 0.1)' : 'rgba(255,255,255,0.03)'}; border: 1px solid ${isNext ? 'var(--primary-blue)' : 'rgba(255,255,255,0.05)'}; border-radius: 16px; transition: all 0.3s ease;">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div style="font-weight: 700; color: var(--text-primary); font-size: 1rem;">${name}</div>
+                    ${isNext ? '<span class="dhikr-chip active" style="font-size: 0.6rem; padding: 0.2rem 0.5rem;">NEXT</span>' : ''}
+                </div>
+                <div style="font-family: 'Outfit', sans-serif; font-weight: 800; color: var(--accent-gold); font-size: 1.1rem;">${time}</div>
+            </div>
+        `;
+    }).join('');
+}
+
 function initBgCycle() {
     setInterval(() => {
         if (state.background.type === 'cycle') {
             currentBgIdx = (currentBgIdx + 1) % bgCycleList.length;
             applyBackground();
         }
+
+        // Ensure UI updates every minute
+        updateDashboardPrayers();
+        updateQiblaPrayers();
     }, 60000); // Cycle every minute
 }
 initBgCycle();
@@ -4246,12 +4884,21 @@ async function handleAuthSubmit(mode) {
             localStorage.setItem('user', JSON.stringify(state.user));
 
             if (data.data) {
-                if (data.data.tracker) state.tracker = data.data.tracker;
-                if (data.data.tasbih_counts) state.tasbih.counts = data.data.tasbih_counts;
-                if (data.data.settings) state.settings = { ...state.settings, ...data.data.settings };
-                if (data.data.bookmarks) state.bookmarks = data.data.bookmarks;
-                if (data.data.goals) state.goals = data.data.goals;
-                if (data.data.quiz) state.quiz = data.data.quiz;
+                if (data.data.tracker) { state.tracker = data.data.tracker; localStorage.setItem('tracker_data', JSON.stringify(state.tracker)); }
+                if (data.data.tasbih_counts) { state.tasbih.counts = data.data.tasbih_counts; localStorage.setItem('tasbih_counts', JSON.stringify(state.tasbih.counts)); }
+                if (data.data.settings) {
+                    state.settings = { ...state.settings, ...data.data.settings };
+                    localStorage.setItem('app_settings', JSON.stringify(state.settings));
+                    if (typeof applyTheme === 'function' && state.settings.currentTheme) {
+                        applyTheme(state.settings.currentTheme, { persist: true });
+                    }
+                    if (typeof applyAppearanceSettings === 'function') {
+                        applyAppearanceSettings();
+                    }
+                }
+                if (data.data.bookmarks) { state.bookmarks = data.data.bookmarks; localStorage.setItem('bookmarks', JSON.stringify(state.bookmarks)); }
+                if (data.data.goals) { state.goals = data.data.goals; localStorage.setItem('goals', JSON.stringify(state.goals)); }
+                if (data.data.quiz) { state.quiz = data.data.quiz; }
             }
 
             updateAuthUI();
@@ -4327,7 +4974,11 @@ function importSyncKey() {
     }
 }
 
-function handleLogout() {
+async function handleLogout() {
+    if (state.user) {
+        // Try to sync any pending changes before logging out
+        try { await syncUserData(); } catch (e) { }
+    }
     state.user = null;
     localStorage.removeItem('user');
     updateAuthUI();
@@ -4448,6 +5099,7 @@ async function renderMushaf() {
                     </div>
                     <button class="dhikr-chip" style="padding: 0.6rem 1.5rem;" onclick="window.app.changeMushafPage(1)" ${state.settings.mushafPage >= 604 ? 'disabled style="opacity:0.3"' : ''}>Next →</button>
                 </div>
+                <div style="height: 100px;"></div>
             </div>
         `;
     } catch (e) {
@@ -4603,6 +5255,7 @@ async function loadSurah(id, scrollToAyah = null) {
                     `;
         }).join('')}
             </div>
+            <div style="height: 100px;"></div>
         `;
 
         if (scrollToAyah) {
@@ -4745,6 +5398,87 @@ function toggleLanguageModal() {
         </div>
     `;
     modal.onclick = (e) => { if (e.target === modal) toggleLanguageModal(); };
+    document.body.appendChild(modal);
+}
+
+function toggleAboutModal() {
+    const existing = document.getElementById('about-modal');
+    if (existing) {
+        existing.remove();
+        return;
+    }
+
+    const modal = document.createElement('div');
+    modal.id = 'about-modal';
+    modal.className = 'modal-overlay active';
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+        <div class="glass-card modal-content" style="max-height: 85vh; overflow-y: auto; width: 92%; max-width: 480px; padding: 2rem; position: relative; border-radius: 24px; border: 1px solid var(--glass-border); background: var(--glass-bg); backdrop-filter: blur(20px);">
+            <!-- Close Button -->
+            <button class="profile-circle" onclick="window.app.toggleAboutModal()" style="position: absolute; top: 1rem; right: 1rem; width: 32px; height: 32px; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); font-size: 1.2rem; color: var(--text-muted); display: flex; align-items: center; justify-content: center; transition: all 0.2s ease;">&times;</button>
+            
+            <!-- Logo & Title -->
+            <div style="display: flex; flex-direction: column; align-items: center; text-align: center; margin-bottom: 2rem; margin-top: 0.5rem;">
+                <div style="width: 72px; height: 72px; background: none; border-radius: 50%; padding: 4px; box-shadow: 0 8px 30px rgba(0,0,0,0.08); margin-bottom: 1rem;">
+                    <img src="icon.png" alt="Salafiyah Logo" style="width: 100%; height: 100%; object-fit: contain;">
+                </div>
+                <h2 class="serif" style="color: var(--primary-blue); font-size: 1.8rem; margin: 0;">Salafiyah</h2>
+                <div style="font-size: 0.72rem; color: var(--accent-primary); font-weight: 800; letter-spacing: 0.15em; text-transform: uppercase; margin-top: 0.2rem;">Spiritual Companion</div>
+            </div>
+
+            <!-- Author Section -->
+            <div class="glass-card" style="padding: 1.25rem; margin-bottom: 1.5rem; text-align: center; background: rgba(var(--primary-blue-rgb), 0.03); border: 1px solid var(--glass-border); border-radius: 16px;">
+                <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem;">Developed By</div>
+                <div style="font-weight: 800; font-size: 1.1rem; color: var(--text-primary);">Sakib Hussain A</div>
+            </div>
+
+            <!-- Features Section -->
+            <div style="margin-bottom: 1.5rem;">
+                <h4 style="color: var(--accent-gold); font-size: 0.95rem; margin-bottom: 0.75rem; border-bottom: 1px solid var(--glass-border); padding-bottom: 0.4rem;">Key Features</h4>
+                <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.75rem;">
+                    <li style="display: flex; gap: 0.6rem; align-items: flex-start; font-size: 0.88rem; color: var(--text-secondary);">
+                        <span style="font-size: 1.1rem; line-height: 1;">📖</span>
+                        <div><strong>Noble Qur'an Explorer:</strong> Complete translation, transliteration, and high-quality recitations with interactive audio playback skip controls.</div>
+                    </li>
+                    <li style="display: flex; gap: 0.6rem; align-items: flex-start; font-size: 0.88rem; color: var(--text-secondary);">
+                        <span style="font-size: 1.1rem; line-height: 1;">🕌</span>
+                        <div><strong>Sacred Mushaf:</strong> Traditional page-by-page display mirroring physical copy layout.</div>
+                    </li>
+                    <li style="display: flex; gap: 0.6rem; align-items: flex-start; font-size: 0.88rem; color: var(--text-secondary);">
+                        <span style="font-size: 1.1rem; line-height: 1;">📿</span>
+                        <div><strong>Tasbih & Dhikr Tracker:</strong> Interactive counter supporting custom goals, vibrate feedback, and AI counting modes.</div>
+                    </li>
+                    <li style="display: flex; gap: 0.6rem; align-items: flex-start; font-size: 0.88rem; color: var(--text-secondary);">
+                        <span style="font-size: 1.1rem; line-height: 1;">💬</span>
+                        <div><strong>Imam AI Assistant:</strong> A compassionate conversational bot to answer Islamic questions based on authentic sources.</div>
+                    </li>
+                    <li style="display: flex; gap: 0.6rem; align-items: flex-start; font-size: 0.88rem; color: var(--text-secondary);">
+                        <span style="font-size: 1.1rem; line-height: 1;">📅</span>
+                        <div><strong>Daily Insights & Tracker:</strong> Log fasts, Taraweeh, Qaza prayers, and monitor your personal spiritual habits over time.</div>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Tech Stack Section -->
+            <div style="margin-bottom: 2rem;">
+                <h4 style="color: var(--accent-emerald); font-size: 0.95rem; margin-bottom: 0.75rem; border-bottom: 1px solid var(--glass-border); padding-bottom: 0.4rem;">Technology Stack</h4>
+                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+                    <span class="dhikr-chip" style="font-size: 0.72rem; padding: 0.3rem 0.7rem; border-radius: 8px; background: rgba(var(--primary-blue-rgb), 0.05); color: var(--text-primary); border: 1px solid var(--glass-border);">HTML5</span>
+                    <span class="dhikr-chip" style="font-size: 0.72rem; padding: 0.3rem 0.7rem; border-radius: 8px; background: rgba(var(--primary-blue-rgb), 0.05); color: var(--text-primary); border: 1px solid var(--glass-border);">JavaScript (ES6+)</span>
+                    <span class="dhikr-chip" style="font-size: 0.72rem; padding: 0.3rem 0.7rem; border-radius: 8px; background: rgba(var(--primary-blue-rgb), 0.05); color: var(--text-primary); border: 1px solid var(--glass-border);">Vanilla CSS3</span>
+                    <span class="dhikr-chip" style="font-size: 0.72rem; padding: 0.3rem 0.7rem; border-radius: 8px; background: rgba(var(--primary-blue-rgb), 0.05); color: var(--text-primary); border: 1px solid var(--glass-border);">FastAPI (Python)</span>
+                    <span class="dhikr-chip" style="font-size: 0.72rem; padding: 0.3rem 0.7rem; border-radius: 8px; background: rgba(var(--primary-blue-rgb), 0.05); color: var(--text-primary); border: 1px solid var(--glass-border);">SQLite</span>
+                    <span class="dhikr-chip" style="font-size: 0.72rem; padding: 0.3rem 0.7rem; border-radius: 8px; background: rgba(var(--primary-blue-rgb), 0.05); color: var(--text-primary); border: 1px solid var(--glass-border);">PWA (Service Worker)</span>
+                </div>
+            </div>
+
+            <!-- Action Button -->
+            <button class="btn-primary" style="width: 100%; border-radius: 12px; font-weight: 700; height: 44px; display: flex; align-items: center; justify-content: center;" onclick="window.app.toggleAboutModal()">
+                Close
+            </button>
+        </div>
+    `;
+    modal.onclick = (e) => { if (e.target === modal) toggleAboutModal(); };
     document.body.appendChild(modal);
 }
 

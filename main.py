@@ -16,14 +16,61 @@ load_dotenv()
 
 # --- Database Setup ---
 DB_PATH = "salafiyah.db"
+POSTGRES_URL = os.getenv("POSTGRES_URL")
+USE_POSTGRES = bool(POSTGRES_URL)
+
+if USE_POSTGRES:
+    try:
+        import psycopg2
+    except ImportError:
+        print("Warning: psycopg2-binary not installed but POSTGRES_URL is set. Falling back to SQLite.")
+        USE_POSTGRES = False
+
+def get_db_connection():
+    if USE_POSTGRES:
+        conn = psycopg2.connect(POSTGRES_URL)
+        return conn, "postgres"
+    else:
+        conn = sqlite3.connect(DB_PATH)
+        return conn, "sqlite"
+
+def execute_query(query, params=(), fetch=None, commit=False):
+    conn, db_type = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        if db_type == "postgres":
+            cursor.execute(query, params)
+        else:
+            # Replace %s with ? for SQLite
+            sqlite_query = query.replace("%s", "?")
+            cursor.execute(sqlite_query, params)
+            
+        result = None
+        if fetch == "one":
+            result = cursor.fetchone()
+        elif fetch == "all":
+            result = cursor.fetchall()
+            
+        rowcount = cursor.rowcount
+        
+        if commit:
+            conn.commit()
+            
+        return {"result": result, "rowcount": rowcount}
+    finally:
+        conn.close()
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn, db_type = get_db_connection()
     cursor = conn.cursor()
+    
+    id_column_def = "id SERIAL PRIMARY KEY" if db_type == "postgres" else "id INTEGER PRIMARY KEY AUTOINCREMENT"
+    
     # Users table
-    cursor.execute('''
+    cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            {id_column_def},
             email TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -100,17 +147,20 @@ async def signup(req: AuthRequest):
         raise HTTPException(status_code=400, detail="Invalid or expired OTP")
     
     try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO users (email, password) VALUES (?, ?)", (req.email, req.password))
-        user_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
+        res = execute_query(
+            "INSERT INTO users (email, password) VALUES (%s, %s) RETURNING id",
+            (req.email, req.password),
+            fetch="one",
+            commit=True
+        )
+        user_id = res["result"][0]
         # Clear OTP after use
         del otps[req.email]
         return {"status": "success", "user_id": user_id, "email": req.email}
-    except sqlite3.IntegrityError:
-        raise HTTPException(status_code=400, detail="Email already registered")
+    except Exception as e:
+        if "IntegrityError" in type(e).__name__ or "UNIQUE" in str(e):
+            raise HTTPException(status_code=400, detail="Email already registered")
+        raise e
 
 @app.post("/api/auth/forgot-password")
 async def forgot_password(req: AuthRequest):
@@ -119,12 +169,12 @@ async def forgot_password(req: AuthRequest):
     if req.email not in otps or otps[req.email] != req.otp:
         raise HTTPException(status_code=400, detail="Invalid or expired OTP")
     
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE users SET password = ? WHERE email = ?", (req.new_password, req.email))
-    affected = cursor.rowcount
-    conn.commit()
-    conn.close()
+    res = execute_query(
+        "UPDATE users SET password = %s WHERE email = %s",
+        (req.new_password, req.email),
+        commit=True
+    )
+    affected = res["rowcount"]
     
     if affected == 0:
         raise HTTPException(status_code=404, detail="User not found")
@@ -136,19 +186,21 @@ async def forgot_password(req: AuthRequest):
 async def login(req: AuthRequest):
     if not req.password:
         raise HTTPException(status_code=400, detail="Password is required")
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, email FROM users WHERE email = ? AND password = ?", (req.email, req.password))
-    user = cursor.fetchone()
-    conn.close()
+    res = execute_query(
+        "SELECT id, email FROM users WHERE email = %s AND password = %s",
+        (req.email, req.password),
+        fetch="one"
+    )
+    user = res["result"]
     
     if user:
         # Load sync data
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT data_json FROM user_data WHERE user_id = ?", (user[0],))
-        data = cursor.fetchone()
-        conn.close()
+        data_res = execute_query(
+            "SELECT data_json FROM user_data WHERE user_id = %s",
+            (user[0],),
+            fetch="one"
+        )
+        data = data_res["result"]
         return {
             "status": "success", 
             "user": {"id": user[0], "email": user[1]},
@@ -159,26 +211,25 @@ async def login(req: AuthRequest):
 
 @app.post("/api/user/sync")
 async def sync_data(req: SyncRequest):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
     # Get user id
-    cursor.execute("SELECT id FROM users WHERE email = ?", (req.email,))
-    user = cursor.fetchone()
+    user_res = execute_query(
+        "SELECT id FROM users WHERE email = %s",
+        (req.email,),
+        fetch="one"
+    )
+    user = user_res["result"]
+    
     if not user:
-        conn.close()
         raise HTTPException(status_code=404, detail="User not found")
     
     user_id = user[0]
     data_str = json.dumps(req.data)
     
-    cursor.execute('''
+    execute_query('''
         INSERT INTO user_data (user_id, data_json, updated_at) 
-        VALUES (?, ?, ?)
-        ON CONFLICT(user_id) DO UPDATE SET data_json=excluded.data_json, updated_at=excluded.updated_at
-    ''', (user_id, data_str, datetime.now()))
-    
-    conn.commit()
-    conn.close()
+        VALUES (%s, %s, %s)
+        ON CONFLICT(user_id) DO UPDATE SET data_json=EXCLUDED.data_json, updated_at=EXCLUDED.updated_at
+    ''', (user_id, data_str, datetime.now()), commit=True)
     return {"status": "success"}
 
 @app.post("/api/ask")
@@ -205,6 +256,44 @@ async def ask_imam(req: AskRequest):
             return response.json()
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/quiz")
+async def generate_quiz():
+    import httpx
+    import json
+    api_key = os.getenv("GROQ_API_KEY", "")
+    
+    prompt = "Generate 5 multiple choice questions about general Islamic knowledge. Make them diverse (history, quran, prophets, fiqh). Return a JSON object with a single key 'questions' containing an array of objects. Each object must have 'q' (the question string), 'a' (an array of exactly 4 answer strings), and 'c' (the integer index 0-3 of the correct answer in 'a')."
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": [
+                        {"role": "system", "content": "You output only valid JSON."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "response_format": {"type": "json_object"},
+                    "temperature": 0.8
+                },
+                timeout=30.0
+            )
+            data = response.json()
+            content = data["choices"][0]["message"]["content"]
+            parsed = json.loads(content)
+            return parsed
+        except Exception as e:
+            print("Quiz generation error:", e)
+            return {"questions": [
+                { "q": "What is the first month of the Islamic calendar?", "a": ["Muharram", "Ramadan", "Shawwal", "Safar"], "c": 0 },
+                { "q": "How many chapters (Surahs) are in the Quran?", "a": ["110", "114", "120", "100"], "c": 1 },
+                { "q": "Which prophet is known as 'Khalilullah' (Friend of Allah)?", "a": ["Musa", "Isa", "Ibrahim", "Nuh"], "c": 2 },
+                { "q": "What is the shortest Surah in the Quran?", "a": ["Al-Ikhlas", "Al-Asr", "Al-Kawthar", "An-Nas"], "c": 2 },
+                { "q": "Which companion is known as 'The Sword of Allah'?", "a": ["Umar ibn al-Khattab", "Ali ibn Abi Talib", "Khalid ibn al-Walid", "Hamza ibn Abdul-Muttalib"], "c": 2 }
+            ]}
 
 
 class TasbihRequest(BaseModel):
@@ -269,7 +358,16 @@ async def serve_static(path: str):
         # Security check: only allow safe extensions
         allowed_extensions = [".js", ".css", ".png", ".jpg", ".svg", ".ico", ".json", ".mp3", ".html", ".webmanifest", ".txt"]
         if any(clean_path.lower().endswith(ext) for ext in allowed_extensions):
-            return FileResponse(file_path)
+            media_type = None
+            if clean_path.lower().endswith('.css'):
+                media_type = 'text/css'
+            elif clean_path.lower().endswith('.js'):
+                media_type = 'application/javascript'
+            elif clean_path.lower().endswith('.svg'):
+                media_type = 'image/svg+xml'
+            elif clean_path.lower().endswith('.json') or clean_path.lower().endswith('.webmanifest'):
+                media_type = 'application/json'
+            return FileResponse(file_path, media_type=media_type)
             
     # Fallback to index.html for SPA routing (if the file doesn't exist)
     if os.path.exists("index.html"):

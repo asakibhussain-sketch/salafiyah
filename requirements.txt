@@ -4,3 +4,4 @@ jinja2
 pyngrok
 httpx
 python-dotenv
+psycopg2-binary
