@@ -251,11 +251,13 @@ const getInitialState = () => {
             ambientEnabled: localStorage.getItem('ambient_enabled') !== 'false',
             patternEnabled: localStorage.getItem('pattern_enabled') !== 'false',
             dynamicPrayerTheme: localStorage.getItem('dynamic_prayer_theme') === 'true',
-            immersiveMode: localStorage.getItem('immersive_mode') === 'true'
+            immersiveMode: localStorage.getItem('immersive_mode') === 'true',
+            hijriAfterMaghrib: localStorage.getItem('hijri_after_maghrib') === 'true',
+            hijriLanguage: localStorage.getItem('hijri_language') || 'en'
         },
         location: JSON.parse(localStorage.getItem('location')) || { city: 'Mecca', country: 'SA' },
         hijri: JSON.parse(localStorage.getItem('hijri_data')) || offlineHijri,
-        prayerTimes: null,
+        prayerTimes: JSON.parse(localStorage.getItem('prayer_times')) || null,
         coordinates: null,
         background: {
             type: localStorage.getItem('bg_type') || 'default',
@@ -288,6 +290,7 @@ const getInitialState = () => {
 
 
 const state = getInitialState();
+window.state = state;
 
 state.settings = {
     method: 3,
@@ -488,15 +491,18 @@ function applyCustomization() {
 
 function formatPrayerTime(timeStr) {
     if (!timeStr) return '--:--';
-    if (state.settings.format24) return timeStr;
+    const clean = timeStr.split(' ')[0]; // strip timezone suffix
+    if (state.settings.format24) return clean;
 
     // Convert HH:mm to 12h
-    const [h, m] = timeStr.split(':');
+    const [h, m] = clean.split(':');
     const hours = parseInt(h);
     const ampm = hours >= 12 ? 'PM' : 'AM';
     const h12 = hours % 12 || 12;
     return `${h12}:${m} ${ampm}`;
 }
+window.formatPrayerTime = formatPrayerTime;
+
 
 // Expose functions to window early to avoid undefined errors
 window.app = {
@@ -597,7 +603,12 @@ window.app = {
     setImmersiveMode: (enabled) => setImmersiveMode(enabled),
     setDynamicPrayerTheme: (enabled) => setDynamicPrayerTheme(enabled),
     setDensity: (density) => setDensity(density),
-    refreshPrayerTheme: () => refreshPrayerTheme()
+    refreshPrayerTheme: () => refreshPrayerTheme(),
+    refreshPrayerTimes: (force = false) => {
+        if (window.prayerEngine) window.prayerEngine.refresh(force);
+        else fetchPrayerTimes();
+    },
+    forceLocationRefresh: () => detectLocation()
 };
 
 const adhkarData = {
@@ -958,7 +969,15 @@ function updateDate() {
 
     const options = { weekday: 'long', day: 'numeric', month: 'long' };
     const dateStr = new Date().toLocaleDateString('en-US', options);
-    const hijriStr = state.hijri ? `${state.hijri.day} ${state.hijri.month.en} ${state.hijri.year}` : '';
+    
+    let hijriStr = '';
+    if (state.hijri) {
+        const lang = (state.settings && state.settings.hijriLanguage) || 'en';
+        let monthStr = state.hijri.month.en;
+        if (lang === 'ar') monthStr = state.hijri.month.ar;
+        else if (lang === 'both') monthStr = `${state.hijri.month.en} - ${state.hijri.month.ar}`;
+        hijriStr = `${state.hijri.day} ${monthStr} ${state.hijri.year}`;
+    }
 
     if (currentDateEl) currentDateEl.textContent = dateStr;
     if (sidebarDateEl) sidebarDateEl.textContent = dateStr;
@@ -1205,6 +1224,24 @@ function playNextAyah() {
     state.audio.player.playbackRate = state.audio.playbackRate;
     state.audio.player.play();
     state.audio.isPlaying = true;
+
+    // --- GAPLESS PLAYBACK FIX: Preload Next Ayah ---
+    let nextIdx = state.audio.currentAyahIndex + 1;
+    if (state.audio.loopMode === 'surah' && nextIdx >= state.audio.surahData.ayahs.length) {
+        nextIdx = 0;
+    }
+    if (state.audio.loopMode === 'ayah') {
+        nextIdx = state.audio.currentAyahIndex;
+    }
+    if (nextIdx < state.audio.surahData.ayahs.length) {
+        if (!state.audio.preloader) {
+            state.audio.preloader = new Audio();
+            state.audio.preloader.preload = 'auto';
+        }
+        state.audio.preloader.src = state.audio.surahData.ayahs[nextIdx].audio;
+        state.audio.preloader.load(); // Fetch immediately
+    }
+    // -----------------------------------------------
 
     state.audio.player.onended = () => {
         playNextAyah();
@@ -1462,7 +1499,23 @@ function handleProgressSeek(val) {
 
 async function renderDashboard() {
     try {
-        const hijriDate = state.hijri ? `${state.hijri.day} ${state.hijri.month.en} ${state.hijri.year}` : 'Loading...';
+        const lang = state.settings.hijriLanguage || 'en';
+        let hijriMonthStr = 'Loading...';
+        let hijriDate = 'Loading...';
+        let islamicEvent = null;
+        
+        if (state.hijri) {
+            const h = state.hijri;
+            if (lang === 'ar') hijriMonthStr = h.month.ar;
+            else if (lang === 'both') hijriMonthStr = `${h.month.en} - ${h.month.ar}`;
+            else hijriMonthStr = h.month.en;
+            
+            hijriDate = `${h.day} ${hijriMonthStr} ${h.year} AH`;
+            
+            if (window.prayerEngine && window.prayerEngine.getIslamicEvent) {
+                islamicEvent = window.prayerEngine.getIslamicEvent(h);
+            }
+        }
 
         // Calculate upcoming fasts dynamically
         const getNextDayOfWeek = (date, dayOfWeek) => {
@@ -1527,16 +1580,52 @@ async function renderDashboard() {
         const prayerOrder = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
         const nextPrayer = getNextPrayer();
         const prayerItemsHtml = state.prayerTimes ? prayerOrder.map(name => {
-            const rawTime = state.prayerTimes[name];
+            const rawTime = (state.prayerTimes[name] || '').split(' ')[0];
             const time = formatPrayerTime(rawTime);
-            const isNext = nextPrayer && nextPrayer.name.includes(name);
+            const isNext = nextPrayer && nextPrayer.name === name;
             return `
-                <div class="prayer-item ${isNext ? 'active' : ''}" style="color: ${isNext ? 'var(--accent-emerald)' : 'var(--text-secondary)'}">
-                    <span>${name}</span>
-                    <span style="font-weight: 700;">${time}</span>
+                <div class="prayer-item ${isNext ? 'active' : ''}" style="color: ${isNext ? 'var(--accent-emerald)' : 'var(--text-secondary)'}; display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0.25rem; border-bottom: 1px solid rgba(255,255,255,0.04);">
+                    <span style="font-weight: ${isNext ? '800' : '600'}; display:flex; align-items:center; gap:0.35rem;">${isNext ? '<span style="width:6px;height:6px;border-radius:50%;background:var(--accent-emerald);display:inline-block;"></span>' : ''} ${name}</span>
+                    <span style="font-weight: 700; font-size: 0.85rem;">${time}</span>
                 </div>
             `;
-        }).join('') : `<div style="text-align: center; color: var(--text-muted); font-size: 0.8rem;">Location required for accurate times</div>`;
+        }).join('') : `<div style="text-align: center; color: var(--text-muted); font-size: 0.8rem; padding: 1rem 0;">Location required for accurate times</div>`;
+
+        // Live countdown info
+        const nextSec = nextPrayer ? (nextPrayer.remainingSeconds || nextPrayer.minutesLeft * 60 || 0) : 0;
+        const nextCountdown = window.formatHMShort ? window.formatHMShort(nextSec) : (nextPrayer ? nextPrayer.minutesLeft + ' min' : '--');
+        const nextName = nextPrayer ? nextPrayer.name : '--';
+        const nextTimeStr = nextPrayer ? formatPrayerTime(nextPrayer.time) : '--';
+
+        // Ramadan widget
+        const isRamadan = window.prayerEngine ? window.prayerEngine.isRamadan() : false;
+        const ramadanDay = isRamadan && window.prayerEngine ? window.prayerEngine.getRamadanDay() : 0;
+        const suhoorEnd = isRamadan && window.prayerEngine ? window.prayerEngine.getSuhoorEndTime() : null;
+        const iftarTime = isRamadan && window.prayerEngine ? window.prayerEngine.getIftarTime() : null;
+        const ramadanWidget = isRamadan ? `
+            <div class="glass-card" style="margin-bottom: 1.5rem; padding: 1.5rem; background: linear-gradient(135deg, rgba(90,40,180,0.15), rgba(255,200,50,0.08)); border: 1px solid rgba(255,200,50,0.25); position: relative; overflow: hidden;">
+                <div style="position:absolute; inset:0; background-image:url('https://www.transparenttextures.com/patterns/islamic-art.png'); opacity:0.04; pointer-events:none;"></div>
+                <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:1.25rem;">
+                    <div style="font-size:1.6rem;">🌙</div>
+                    <div>
+                        <div style="font-size:0.65rem; font-weight:800; color:var(--accent-gold); text-transform:uppercase; letter-spacing:0.15em;">Ramadan ${hijriDate.split(' ')[2] || ''}</div>
+                        <div style="font-size:1rem; font-weight:900; color:var(--text-primary);">Day ${ramadanDay} — Fasting</div>
+                    </div>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+                    <div style="background:rgba(0,0,0,0.12); border-radius:16px; padding:1rem; text-align:center;">
+                        <div style="font-size:0.65rem; font-weight:800; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:0.4rem;">☀️ Suhoor Ends</div>
+                        <div style="font-size:1rem; font-weight:900; color:var(--text-primary);">${suhoorEnd ? formatPrayerTime(suhoorEnd) : '--'}</div>
+                        <div id="pe-suhoor-cd" style="font-size:0.7rem; color:var(--accent-gold); font-weight:700; margin-top:0.25rem; font-variant-numeric:tabular-nums;">--:--:--</div>
+                    </div>
+                    <div style="background:rgba(0,0,0,0.12); border-radius:16px; padding:1rem; text-align:center;">
+                        <div style="font-size:0.65rem; font-weight:800; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:0.4rem;">🌅 Iftar</div>
+                        <div style="font-size:1rem; font-weight:900; color:var(--text-primary);">${iftarTime ? formatPrayerTime(iftarTime) : '--'}</div>
+                        <div id="pe-iftar-cd" style="font-size:0.7rem; color:var(--accent-emerald); font-weight:700; margin-top:0.25rem; font-variant-numeric:tabular-nums;">--:--:--</div>
+                    </div>
+                </div>
+            </div>
+        ` : '';
 
         contentArea.innerHTML = `
             <div class="premium-dashboard" style="animation: entrance 0.8s var(--anim-spring) both;">
@@ -1581,20 +1670,38 @@ async function renderDashboard() {
                     </div>
                 </div>
 
+                ${ramadanWidget}
+
                 <!-- ===== MAIN GRID ROW 1 ===== -->
                 <div class="grid-4-cols">
                     <!-- Prayer Times -->
                     <div class="glass-card" style="padding: 1.5rem;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
                             <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; font-weight: 700; color: var(--text-primary);">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
                                 Prayer Times
                             </div>
-                            <span style="font-size: 0.65rem; color: var(--text-muted);">${hijriDate}</span>
+                            <button onclick="window.app.refreshPrayerTimes(true)" title="Refresh" style="background:none;border:none;cursor:pointer;color:var(--text-muted);padding:4px;" title="Refresh prayer times">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                            </button>
                         </div>
+
+                        <!-- Live Countdown Banner -->
+                        ${state.prayerTimes ? `
+                        <div style="background: linear-gradient(135deg, rgba(var(--primary-blue-rgb),0.12), rgba(var(--primary-blue-rgb),0.04)); border: 1px solid rgba(var(--primary-blue-rgb),0.2); border-radius: 14px; padding: 0.85rem 1rem; margin-bottom: 0.85rem; text-align:center;">
+                            <div style="font-size:0.6rem; font-weight:800; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:0.2rem;">Next: <span id="pe-next-name">${nextName}</span> at <span id="pe-next-time">${nextTimeStr}</span></div>
+                            <div id="pe-countdown" style="font-size:1.3rem; font-weight:900; color:var(--primary-blue); font-variant-numeric:tabular-nums; letter-spacing:0.02em;">${nextCountdown}</div>
+                            <!-- Progress bar -->
+                            <div style="height:3px; background:rgba(var(--primary-blue-rgb),0.15); border-radius:2px; margin-top:0.6rem; overflow:hidden;">
+                                <div id="pe-progress-bar" style="height:100%; background:var(--primary-blue); border-radius:2px; transition:width 1s linear; width:0%;"></div>
+                            </div>
+                        </div>
+                        ` : ''}
+
                         <div class="prayer-list" id="dashboard-prayer-list">
                             ${prayerItemsHtml}
                         </div>
+                        <div style="margin-top:0.75rem; font-size:0.6rem; color:var(--text-muted); text-align:center;">${state.location.city ? '📍 ' + state.location.city + ', ' + state.location.country : ''}</div>
                     </div>
 
                     <!-- Daily Dhikr -->
@@ -1632,23 +1739,45 @@ async function renderDashboard() {
                         <button class="btn-primary" onclick="window.app.loadScreen('${state.lastRead.type}')" style="width: 100%; justify-content: center; padding: 0.75rem;">Continue</button>
                     </div>
 
-                    <!-- Calendar -->
-                    <div class="glass-card" style="padding: 1.5rem; display: flex; flex-direction: column;">
-                        <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; font-weight: 700; color: var(--text-primary); margin-bottom: 1.25rem;">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                            Islamic Calendar
-                        </div>
-                        <div style="font-size: 0.95rem; font-weight: 800; color: var(--text-primary); margin-bottom: 0.25rem;">${hijriDate}</div>
-                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1.5rem;">${new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
-                        
-                        <div style="margin-top: auto;">
-                            <div style="font-size: 0.65rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.75rem;">Upcoming Fasts</div>
-                            <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-                                ${upcomingFastsHtml}
+                    <!-- Live Hijri Widget -->
+                    <div class="glass-card" style="padding: 1.5rem; display: flex; flex-direction: column; position: relative; overflow: hidden; grid-column: span 1;">
+                        <div style="position: absolute; inset: 0; background-image: url('https://www.transparenttextures.com/patterns/islamic-art.png'); opacity: 0.05; pointer-events: none;"></div>
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; position: relative; z-index: 1;">
+                            <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; font-weight: 700; color: var(--accent-gold);">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                                Hijri Calendar
                             </div>
+                            <button onclick="window.app.loadScreen('calendar')" style="background:none;border:none;color:var(--text-muted);cursor:pointer;" title="View Calendar">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                            </button>
                         </div>
-
-                        <button class="btn-primary" onclick="window.app.loadScreen('calendar')" style="width: 100%; margin-top: 1.5rem; justify-content: center; background: transparent; border: 1.5px solid var(--border-color); color: var(--text-primary); padding: 0.75rem;">View Calendar</button>
+                        
+                        <div style="position: relative; z-index: 1; display: flex; flex-direction: column; flex: 1;">
+                            <div style="font-size: 1.3rem; font-weight: 900; color: var(--text-primary); margin-bottom: 0.25rem;">${hijriDate}</div>
+                            <div style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.75rem;">${new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
+                            
+                            <div style="display: flex; gap: 1rem; font-size: 0.65rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: ${islamicEvent ? '1rem' : 'auto'};">
+                                <div><span style="opacity:0.6">City:</span> <span style="color:var(--primary-blue)">${state.location.city || '--'}</span></div>
+                                <div><span style="opacity:0.6">TZ:</span> <span style="color:var(--primary-blue)">${state.coordinates?.timezone?.split('/')[1]?.replace('_',' ') || '--'}</span></div>
+                            </div>
+                            
+                            ${islamicEvent ? `
+                            <div style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(var(--primary-blue-rgb), 0.1)); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 12px; padding: 0.75rem; display: flex; align-items: center; gap: 0.75rem; margin-top: auto;">
+                                <div style="font-size: 1.2rem;">✨</div>
+                                <div>
+                                    <div style="font-size: 0.65rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em;">Today</div>
+                                    <div style="font-size: 0.85rem; font-weight: 900; color: var(--text-primary);">${islamicEvent}</div>
+                                </div>
+                            </div>
+                            ` : `
+                            <div style="margin-top: auto; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.05);">
+                                <div style="font-size: 0.65rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.5rem;">Upcoming Fasts</div>
+                                <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+                                    ${upcomingFastsHtml}
+                                </div>
+                            </div>
+                            `}
+                        </div>
                     </div>
                 </div>
 
@@ -2326,17 +2455,41 @@ async function renderCalendar() {
         const { method, school } = state.settings;
         
         // Check local cache first to avoid rate limiting
-        const cacheKey = `calendar_${year}_${month}`;
+        const adj = state.settings.hijriOffset || 0;
+        const cacheKey = `calendar_${year}_${month}_adj${adj}`;
         let data;
         
         if (state[cacheKey]) {
             data = state[cacheKey];
         } else {
-            const adj = state.settings.hijriOffset || 0;
-            const res = await fetch(`https://api.aladhan.com/v1/calendarByCity/${year}/${month}?city=${city}&country=${country}&method=${method}&school=${school}&adj=${adj}`);
+            // Note: calendarByCity API ignores adj, so we fetch base and shift it manually.
+            const res = await fetch(`https://api.aladhan.com/v1/calendarByCity/${year}/${month}?city=${city}&country=${country}&method=${method}&school=${school}`);
             const json = await res.json();
             if (json.code === 200) {
-                data = json.data;
+                let fetchedData = json.data;
+                if (adj !== 0) {
+                    const originalData = JSON.parse(JSON.stringify(fetchedData));
+                    const promises = [];
+                    for (let i = 0; i < fetchedData.length; i++) {
+                        const t = i + adj;
+                        if (t >= 0 && t < fetchedData.length) {
+                            fetchedData[i].date.hijri = originalData[t].date.hijri;
+                        } else {
+                            const targetDate = new Date(year, month - 1, i + 1 + adj);
+                            const gDate = `${targetDate.getDate().toString().padStart(2, '0')}-${(targetDate.getMonth()+1).toString().padStart(2, '0')}-${targetDate.getFullYear()}`;
+                            const p = fetch(`https://api.aladhan.com/v1/gToH/${gDate}`)
+                                .then(r => r.json())
+                                .then(adjData => {
+                                    if (adjData.code === 200 && adjData.data && adjData.data.hijri) {
+                                        fetchedData[i].date.hijri = adjData.data.hijri;
+                                    }
+                                }).catch(e => console.warn('gToH calendar adj fail', e));
+                            promises.push(p);
+                        }
+                    }
+                    if (promises.length > 0) await Promise.all(promises);
+                }
+                data = fetchedData;
                 state[cacheKey] = data; // cache for session
             } else {
                 throw new Error("API Error");
@@ -2363,10 +2516,17 @@ async function renderCalendar() {
                 <div class="glass-card" style="padding: 1.5rem; @media(min-width: 768px) { padding: 2rem; }">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
                         <h3 style="margin: 0; font-size: 1.25rem; font-weight: 800;">${monthName} ${year}</h3>
-                        <div style="display: flex; gap: 0.75rem;">
+                        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                            <!-- Year Nav -->
+                            <button class="dhikr-chip" style="padding: 0.4rem 0.6rem; font-size: 0.75rem;" onclick="window.app.navigateCalendar('prevYear')" title="Previous Year">«</button>
+                            
+                            <!-- Month Nav -->
                             <button class="dhikr-chip" style="padding: 0.6rem 1rem;" onclick="window.app.navigateCalendar(-1)">←</button>
                             ${!isCurrentMonth ? `<button class="dhikr-chip" style="padding: 0.6rem 1rem;" onclick="window.app.navigateCalendar('now')">Today</button>` : ''}
                             <button class="dhikr-chip" style="padding: 0.6rem 1rem;" onclick="window.app.navigateCalendar(1)">→</button>
+                            
+                            <!-- Year Nav -->
+                            <button class="dhikr-chip" style="padding: 0.4rem 0.6rem; font-size: 0.75rem;" onclick="window.app.navigateCalendar('nextYear')" title="Next Year">»</button>
                         </div>
                     </div>
 
@@ -2388,6 +2548,9 @@ async function renderCalendar() {
                             // Parse timings
                             const fajr = dayData.timings.Fajr.split(' ')[0];
                             const maghrib = dayData.timings.Maghrib.split(' ')[0];
+                            
+                            // Check Islamic Event
+                            const eventName = window.prayerEngine && window.prayerEngine.getIslamicEvent ? window.prayerEngine.getIslamicEvent(dayData.date.hijri) : null;
 
                             return `
                                 <div style="display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 0.4rem; position: relative; border-radius: 12px; background: ${isToday ? 'var(--primary-blue)' : 'rgba(255,255,255,0.03)'}; color: ${isToday ? '#fff' : 'var(--text-primary)'}; border: 1px solid ${isToday ? 'var(--primary-blue)' : 'var(--glass-border)'}; transition: all 0.2s ease; min-height: 80px;">
@@ -2395,6 +2558,9 @@ async function renderCalendar() {
                                         <span style="font-weight: 800; font-size: 0.95rem;">${day}</span>
                                         <span style="font-size: 0.65rem; color: ${isToday ? 'rgba(255,255,255,0.8)' : 'var(--accent-gold)'}; font-weight: 700;">${hijriDayVal}</span>
                                     </div>
+                                    
+                                    ${eventName ? `<div style="font-size: 0.5rem; font-weight: 800; color: var(--accent-gold); text-align: center; margin: 2px 0; line-height: 1; letter-spacing: 0.05em;">${eventName}</div>` : ''}
+                                    
                                     <div style="display: flex; flex-direction: column; width: 100%; gap: 2px; margin-top: auto;">
                                         <div style="font-size: 0.6rem; color: ${isToday ? 'rgba(255,255,255,0.9)' : 'var(--text-secondary)'}; background: ${isToday ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.04)'}; border-radius: 4px; padding: 2px 4px; display: flex; justify-content: space-between;">
                                             <span>Suh.</span> <strong>${fajr}</strong>
@@ -2448,6 +2614,10 @@ function navigateCalendar(dir) {
             month: new Date().getMonth() + 1,
             year: new Date().getFullYear()
         };
+    } else if (dir === 'nextYear') {
+        state.calendarView.year++;
+    } else if (dir === 'prevYear') {
+        state.calendarView.year--;
     } else {
         let newMonth = state.calendarView.month + dir;
         let newYear = state.calendarView.year;
@@ -2504,186 +2674,221 @@ function renderDuas(selectedCat = 'all') {
 
     const duas = [
         {
-            cat: 'waking_up',
-            title: 'Waking Up',
-            arabic: 'الْحَمْدُ لِلَّهِ الَّذِي أَحْيَانَا بَعْدَ مَا أَمَاتَنَا وَإِلَيْهِ النُّشُورُ',
-            translit: 'Alhamdu lillahil-ladhi ahyana ba\'da ma amatana wa ilaihin-nushur',
-            trans: 'All praise is for Allah who gave us life after having taken it from us and unto Him is the resurrection.'
+            "cat": "waking_up",
+            "title": "Waking Up",
+            "arabic": "الْحَمْدُ لِلَّهِ الَّذِي أَحْيَانَا بَعْدَ مَا أَمَاتَنَا وَإِلَيْهِ النُّشُورُ",
+            "translit": "Alhamdu lillahil-ladhi ahyana ba'da ma amatana wa ilaihin-nushur",
+            "trans": "All praise is for Allah who gave us life after having taken it from us and unto Him is the resurrection."
         },
         {
-            cat: 'istighfar',
-            title: 'Sayyidul Istighfar (Chief Forgiveness)',
-            arabic: 'اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَهَ إِلَّا أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَى عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ لَكَ بِذَنْبِي فَاغْفِرْ لِي فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ',
-            translit: 'Allahumma Anta Rabbi la ilaha illa Anta, khalaqtani wa ana \'abduka, wa ana \'ala \'ahdika wa wa\'dika mastata\'tu, a\'udhu bika min sharri ma sana\'tu, abu\'u laka bini\'matika \'alayya, wa abu\'u laka bidhanbi faghfir li fa-innahu la yaghfirudh-dhunuba illa Anta',
-            trans: 'O Allah, You are my Lord, none has the right to be worshipped except You, You created me and I am Your servant and I abide to Your covenant and promise as best I can, I take refuge in You from the evil which I have committed. I acknowledge Your favour upon me and I acknowledge my sin, so forgive me, for verily none can forgive sin except You.'
+            "cat": "istighfar",
+            "title": "Sayyidul Istighfar (Chief Forgiveness)",
+            "arabic": "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَهَ إِلَّا أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَى عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ لَكَ بِذَنْبِي فَاغْفِرْ لِي فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ",
+            "translit": "Allahumma Anta Rabbi la ilaha illa Anta, khalaqtani wa ana 'abduka, wa ana 'ala 'ahdika wa wa'dika mastata'tu, a'udhu bika min sharri ma sana'tu, abu'u laka bini'matika 'alayya, wa abu'u laka bidhanbi faghfir li fa-innahu la yaghfirudh-dhunuba illa Anta",
+            "trans": "O Allah, You are my Lord, none has the right to be worshipped except You, You created me and I am Your servant and I abide to Your covenant and promise as best I can, I take refuge in You from the evil which I have committed. I acknowledge Your favour upon me and I acknowledge my sin, so forgive me, for verily none can forgive sin except You."
         },
         {
-            cat: 'parents',
-            title: 'For Parents',
-            arabic: 'رَّبِّ ارْحَمْهُمَا كَمَا رَبَّيَانِي صَغِيرًا',
-            translit: 'Rabbir-hamhuma kama rabbayani saghira',
-            trans: 'My Lord, have mercy upon them as they brought me up [when I was] small.'
+            "cat": "parents",
+            "title": "For Parents",
+            "arabic": "رَّبِّ ارْحَمْهُمَا كَمَا رَبَّيَانِي صَغِيرًا",
+            "translit": "Rabbir-hamhuma kama rabbayani saghira",
+            "trans": "My Lord, have mercy upon them as they brought me up [when I was] small."
         },
         {
-            cat: 'morning_dhikr',
-            title: 'Morning/Evening Protection',
-            arabic: 'بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ',
-            translit: 'Bismillahi-lladhi la yadurru ma\'as-mihi shai\'un fil-ardi wa la fis-sama\'i wa Huwas-Sami\'ul-\'Alim',
-            trans: 'In the Name of Allah, Who with His Name nothing can cause harm in the earth nor in the heavens, and He is the All-Hearing, the All-Knowing.'
+            "cat": "morning_dhikr",
+            "title": "Morning/Evening Protection",
+            "arabic": "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ",
+            "translit": "Bismillahi-lladhi la yadurru ma'as-mihi shai'un fil-ardi wa la fis-sama'i wa Huwas-Sami'ul-'Alim",
+            "trans": "In the Name of Allah, Who with His Name nothing can cause harm in the earth nor in the heavens, and He is the All-Hearing, the All-Knowing."
         },
         {
-            cat: 'travelling',
-            title: 'Travel Dua',
-            arabic: 'سُبْحَانَ الَّذِي سَخَّرَ لَنَا هَذَا وَمَا كُنَّا لَهُ مُقْرِنِينَ وَإِنَّا إِلَى رَبِّنَا لَمُنْقَلِبُونَ',
-            translit: 'Subhanalladhi sakh-khara lana hadha wa ma kunna lahu muqrineen. Wa inna ila Rabbina lamunqaliboon',
-            trans: 'Glory is to Him who has subjected this to us, and we could not have [otherwise] subdued it. And indeed we, to our Lord, will surely return.'
+            "cat": "travelling",
+            "title": "Travel Dua",
+            "arabic": "سُبْحَانَ الَّذِي سَخَّرَ لَنَا هَذَا وَمَا كُنَّا لَهُ مُقْرِنِينَ وَإِنَّا إِلَى رَبِّنَا لَمُنْقَلِبُونَ",
+            "translit": "Subhanalladhi sakh-khara lana hadha wa ma kunna lahu muqrineen. Wa inna ila Rabbina lamunqaliboon",
+            "trans": "Glory is to Him who has subjected this to us, and we could not have [otherwise] subdued it. And indeed we, to our Lord, will surely return."
         },
         {
-            cat: 'difficulties',
-            title: 'Dua of Prophet Yunus',
-            arabic: 'لَا إِلَهَ إِلَّا أَنْتَ سُبْحَانَكَ إِنِّي كُنْتُ مِنَ الظَّالِمِينَ',
-            translit: 'La ilaha illa Anta subhanaka inni kuntu minaz-zalimin',
-            trans: 'There is no deity except You; exalted are You. Indeed, I have been of the wrongdoers.'
+            "cat": "difficulties",
+            "title": "Dua of Prophet Yunus",
+            "arabic": "لَا إِلَهَ إِلَّا أَنْتَ سُبْحَانَكَ إِنِّي كُنْتُ مِنَ الظَّالِمِينَ",
+            "translit": "La ilaha illa Anta subhanaka inni kuntu minaz-zalimin",
+            "trans": "There is no deity except You; exalted are You. Indeed, I have been of the wrongdoers."
         },
         {
-            cat: 'after_salah_dhikr',
-            title: 'After Salah (Tasbih)',
-            arabic: 'سُبْحَانَ اللَّهِ (33x)، الْحَمْدُ لِلَّهِ (33x)، اللَّهُ أَكْبَرُ (33x)',
-            translit: 'SubhanAllah, AlHamdulillah, AllahuAkbar',
-            trans: 'Glory be to Allah, Praise be to Allah, Allah is the Greatest.'
+            "cat": "after_salah_dhikr",
+            "title": "After Salah (Tasbih)",
+            "arabic": "سُبْحَانَ اللَّهِ (33x)، الْحَمْدُ لِلَّهِ (33x)، اللَّهُ أَكْبَرُ (33x)",
+            "translit": "SubhanAllah, AlHamdulillah, AllahuAkbar",
+            "trans": "Glory be to Allah, Praise be to Allah, Allah is the Greatest."
         },
         {
-            cat: 'ruqyah_illness',
-            title: 'Reciting Surah Al-Fatihah for Healing',
-            arabic: 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ',
-            translit: 'Bismillahir-Rahmanir-Rahim',
-            trans: 'In the name of Allah, the Most Gracious, the Most Merciful'
+            "cat": "ruqyah_illness",
+            "title": "Reciting Surah Al-Fatihah for Healing",
+            "arabic": "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
+            "translit": "Bismillahir-Rahmanir-Rahim",
+            "trans": "In the name of Allah, the Most Gracious, the Most Merciful"
         },
         {
-            cat: 'praises_of_allah',
-            title: 'Tahajjud Prayer Dua',
-            arabic: 'اللهم لك الحمد أنت نور السماوات والأرض',
-            translit: 'Allahumma lakal hamdu anta nurus samawati wal ard',
-            trans: 'O Allah, to You belongs all praise. You are the light of the heavens and the earth'
+            "cat": "praises_of_allah",
+            "title": "Tahajjud Prayer Dua",
+            "arabic": "اللهم لك الحمد أنت نور السماوات والأرض",
+            "translit": "Allahumma lakal hamdu anta nurus samawati wal ard",
+            "trans": "O Allah, to You belongs all praise. You are the light of the heavens and the earth"
         },
         {
-            cat: 'salawat',
-            title: 'Dua for Blessings',
-            arabic: 'اللهم صل على محمد',
-            translit: 'Allahumma salli ala Muhammad',
-            trans: 'O Allah, send blessings upon Muhammad'
+            "cat": "salawat",
+            "title": "Dua for Blessings",
+            "arabic": "اللهم صل على محمد",
+            "translit": "Allahumma salli ala Muhammad",
+            "trans": "O Allah, send blessings upon Muhammad"
         },
         {
-            cat: 'istighfar',
-            title: 'Istighfar Dua',
-            arabic: 'اللَّهُمَّ أَنْتَ رَبِّي لا إِلَهَ إِلا أَنْتَ خَلَقْتَنِي وَأَنَا عَبْدُكَ وَأَنَا عَلَى عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ وَأَبُوءُ بِذَنْبِي فَاغْفِرْ لِي ذُنُوبِي جَمِيعًا إِنَّهُ لا يَغْفِرُ الذُّنُوبَ إِلا أَنْتَ',
-            translit: 'Allahumma anta rabbi, la ilaha illa anta, khalaqtani wa ana abduka, wa ana ala ahdika wa waadika ma astata\'t, abuu\'u laka bi ni\'matika alayya wa abuu\'u bi dhanbi, faghfir li dhunubi jami\'an, innahu la yaghfiru dh-dhunuba illa anta',
-            trans: 'O Allah, You are my Lord, there is no god but You. You created me and I am Your servant, and I am upon Your covenant and Your promise as much as I can. I seek refuge in You from the evil of what I have done, and I acknowledge Your favor upon me, and I acknowledge my sin. Forgive me all my sins, for indeed, no one forgives sins except You.'
+            "cat": "dhikr_for_all_time",
+            "title": "Best Dhikr",
+            "arabic": "لا إله إلا الله",
+            "translit": "La ilaha illallah",
+            "trans": "There is no deity except Allah"
         },
         {
-            cat: 'dhikr_for_all_time',
-            title: 'Best Dhikr',
-            arabic: 'لا إله إلا الله',
-            translit: 'La ilaha illallah',
-            trans: 'There is no deity except Allah'
+            "cat": "quranic_duas",
+            "title": "Dua for Guidance",
+            "arabic": "رَبَّنَا آتِنَا مِن لَّدُنكَ رَحْمَةً وَهَيِّئْ لَنَا مِنْ أَمْرِنَا رَشَدًا",
+            "translit": "Rabbanā ātinā min ladunka raḥmatan wa hayyi lanā min amrinā rashada",
+            "trans": "Our Lord, give us mercy from Yourself and prepare for us from our affairs guidance"
         },
         {
-            cat: 'quranic_duas',
-            title: 'Dua for Guidance',
-            arabic: 'رَبَّنَا آتِنَا مِن لَّدُنكَ رَحْمَةً وَهَيِّئْ لَنَا مِنْ أَمْرِنَا رَشَدًا',
-            translit: 'Rabbanā ātinā min ladunka raḥmatan wa hayyi lanā min amrinā rashada',
-            trans: 'Our Lord, give us mercy from Yourself and prepare for us from our affairs guidance'
+            "cat": "sunnah_duas",
+            "title": "Superior Manner of Seeking Forgiveness",
+            "arabic": "اللَّهُمَّ أَنْتَ رَبِّي لا إِلَهَ إِلا أَنْتَ",
+            "translit": "Allaahumma anta rabbi laa ilaaha illa anta...",
+            "trans": "O Allah, You are my Lord, there is no god except You..."
         },
         {
-            cat: 'sunnah_duas',
-            title: 'Superior Manner of Seeking Forgiveness',
-            arabic: 'اللَّهُمَّ أَنْتَ رَبِّي لا إِلَهَ إِلا أَنْتَ',
-            translit: 'Allaahumma anta rabbi laa ilaaha illa anta...',
-            trans: 'O Allah, You are my Lord, there is no god except You...'
+            "cat": "evening_dhikr",
+            "title": "Evening Protection",
+            "arabic": "أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ",
+            "translit": "Amsayna wa amsal mulku lillah",
+            "trans": "We have reached the evening and at this very time unto Allah belongs all sovereignty."
         },
         {
-            cat: 'nightmares',
-            title: 'Dua for Nightmares',
-            arabic: 'أَعُوذُ بِكَلِمَاتِ اللَّهِ التَّامَّاتِ مِنْ غَضَبِهِ وَعِقَابِهِ وَشَرِّ عِبَادِهِ وَمِنْ هَمَزَاتِ الشَّيَاطِينِ وَأَنْ يَحْضُرُونِ',
-            translit: 'A\'udhu bikalimatillahit-tammati min ghadhabihi wa \'iqabihi wa sharri \'ibadihi, wa min hamazatish-shayatini wa an yahdhurun',
-            trans: 'I seek refuge in the perfect words of Allah from His anger and punishment, and from the evil of His slaves, and from the taunts of the devils and from their presence.'
+            "cat": "before_sleep_dhikr",
+            "title": "Before Sleeping",
+            "arabic": "بِاسْمِكَ اللَّهُمَّ أَمُوتُ وَأَحْيَا",
+            "translit": "Bismika Allahumma amutu wa ahya",
+            "trans": "In Your name, O Allah, I die and I live."
         },
         {
-            cat: 'lavatory_wudu',
-            title: 'Dua for Lavatory',
-            arabic: 'اللَّهُمَّ إِنِّي أَعُوذُ بِكَ مِنَ الْخُبُثِ وَالْخَبَائِثِ',
-            translit: 'Allaahumma inni aoodhu bika minal khubuthi wal khabaaith',
-            trans: 'O Allah, I seek refuge with You from the male and female devils'
+            "cat": "salah_dhikr",
+            "title": "Dua during Sujood",
+            "arabic": "سُبْحَانَ رَبِّيَ الأَعْلَى",
+            "translit": "Subhana Rabbiyal A'la",
+            "trans": "Glory is to my Lord, the Most High."
         },
         {
-            cat: 'istikharah',
-            title: 'Istikharah Dua',
-            arabic: 'اللَّهُمَّ إِنِّي أَسْتَخِيرُكَ بِعِلْمِكَ وَأَسْتَقْدِرُكَ بِقُدْرَتِكَ',
-            translit: 'Allahumma inni astakhiruka bi\'ilmika wa astaqdiruka biqudratika...',
-            trans: 'O Allah, I seek Your guidance by virtue of Your knowledge, and I seek ability by virtue of Your power...'
+            "cat": "nightmares",
+            "title": "When waking from a nightmare",
+            "arabic": "أَعُوذُ بِكَلِمَاتِ اللَّهِ التَّامَّاتِ مِنْ غَضَبِهِ وَعِقَابِهِ وَشَرِّ عِبَادِهِ",
+            "translit": "A'udhu bikalimatillahit-tammati min ghadabihi wa 'iqabihi wa sharri 'ibadihi",
+            "trans": "I seek refuge in the perfect words of Allah from His anger and punishment, and from the evil of His slaves."
         },
         {
-            cat: 'difficulties',
-            title: 'Dua in Difficulties',
-            arabic: 'اللَّهُمَّ إِنِّي أَعُوذُ بِكَ مِنَ الشَّرِّ كُلِّهِ',
-            translit: 'Allahumma inni afuz min ash-sharri kullihi',
-            trans: 'O Allah, I seek refuge in You from all evil'
+            "cat": "clothes",
+            "title": "When wearing a garment",
+            "arabic": "الْحَمْدُ لِلَّهِ الَّذِي كَسَانِي هَذَا (الثَّوْبَ) وَرَزَقَنِيهِ مِنْ غَيْرِ حَوْلٍ مِنِّي وَلَا قُوَّةٍ",
+            "translit": "Alhamdu lillahil-ladhi kasani hadha (ath-thawba) wa razaqanihi min ghayri hawlin minni wa la quwwatin",
+            "trans": "Praise is to Allah Who has clothed me with this (garment) and provided it for me, though I was powerless myself and incapable."
         },
         {
-            cat: 'protection_of_iman',
-            title: 'Protection of Iman',
-            arabic: 'اللَّهُمَّ إِنِّي أَعُوذُ بِكَ مِنْ عِلْمٍ لَا يَنْفَعُ وَمِنْ قَلْبٍ لَا يَخْشَعُ وَمِنْ نَفْسٍ لَا تَشْبَعُ وَمِنْ دَعْوَةٍ لَا يُستَجَابُ لَهَا',
-            translit: 'Allahumma inni a\'udhu bika min \'ilmin la yanfa\'u wa min qalbin la yakhsha\'u wa min nafsin la tashba\'u wa min da\'watin la yustajabu laha',
-            trans: 'O Allah, I seek refuge in You from knowledge that does not benefit, from a heart that does not fear, from a soul that does not feel satisfied, and from a supplication that is not answered'
+            "cat": "lavatory_wudu",
+            "title": "Entering the lavatory",
+            "arabic": "اللَّهُمَّ إِنِّي أَعُوذُ بِكَ مِنَ الْخُبْثِ وَالْخَبَائِثِ",
+            "translit": "Allahumma inni a'udhu bika minal khubthi wal khaba'ith",
+            "trans": "O Allah, I seek refuge with You from all offensive and wicked things (evil demons)."
         },
         {
-            cat: 'hajj_umrah',
-            title: 'After Hajj',
-            arabic: 'اللَّهُ أَكْبَرُ اللَّهُ أَكْبَرُ لاَ إِلَٰهَ إِلَّا اللَّهُ وَاللَّهُ أَكْبَرُ اللَّهُ أَكْبَرُ وَلِلَّٰهِ الْحَمْدُ',
-            translit: 'Allahu akbar, Allahu akbar, la ilaha illallahu wallahu akbar, Allahu akbar, wa lillahil hamd',
-            trans: 'Allah is the greatest, Allah is the greatest, there is no deity except Allah, and Allah is the greatest, Allah is the greatest, and to Allah belongs all praise'
+            "cat": "food_drinks",
+            "title": "Before eating",
+            "arabic": "بِسْمِ اللَّهِ",
+            "translit": "Bismillah",
+            "trans": "In the Name of Allah."
         },
         {
-            cat: 'travelling',
-            title: 'For Travelling',
-            arabic: 'سُبْحَانَ الَّذِي سَخَّرَ لَنَا هَذَا وَمَا كُنَّا لَهُ مُقْرِنِينَ',
-            translit: 'Subhanalladhi sakhkhara lana hadha wa ma kunna lahu muqrinin',
-            trans: 'How perfect is the One Who has given us control over this; we could not have done it by ourselves.'
+            "cat": "home",
+            "title": "Entering the home",
+            "arabic": "بِسْمِ اللَّهِ وَلَجْنَا، وَبِسْمِ اللَّهِ خَرَجْنَا، وَعَلَى رَبِّنَا تَوَكَّلْنَا",
+            "translit": "Bismillahi walajna, wa bismillahi kharajna, wa 'ala Rabbina tawakkalna",
+            "trans": "In the Name of Allah we enter, in the Name of Allah we leave, and upon our Lord we depend."
         },
         {
-            cat: 'money_shopping',
-            title: 'Marketplace Dua',
-            arabic: 'لا إله إلا الله',
-            translit: 'La ilaha illallahu',
-            trans: 'There is no god but Allah'
+            "cat": "adhan_masjid",
+            "title": "Entering the Masjid",
+            "arabic": "اللَّهُمَّ افْتَحْ لِي أَبْوَابَ رَحْمَتِكَ",
+            "translit": "Allahummaf-tah li abwaba rahmatika",
+            "trans": "O Allah, open the doors of Your mercy for me."
         },
         {
-            cat: 'social_interactions',
-            title: 'When Sneezing',
-            arabic: 'الْحَمْدُ لِلَّهِ',
-            translit: 'Alhamdu lillah',
-            trans: 'Praise be to Allah'
+            "cat": "istikharah",
+            "title": "Dua of Istikharah",
+            "arabic": "اللَّهُمَّ إِنِّي أَسْتَخِيرُكَ بِعِلْمِكَ",
+            "translit": "Allahumma inni astakhiruka bi'ilmika",
+            "trans": "O Allah, I seek Your guidance [in making a choice] by virtue of Your knowledge."
         },
         {
-            cat: 'marriage_children',
-            title: 'Marriage Congratulation',
-            arabic: 'بَارَكَ اللَّهُ لَكَ، وَبَارَكَ عَلَيْكَ، وَجَمَعَ بَيْنَكُمَا فِي خَيْرٍ',
-            translit: 'Baarakallaahu laka, wa baaraka `alayka, wa jama`a baynakuma fi khayr',
-            trans: 'May Allah bless you, and bless you with good, and bring goodness between you'
+            "cat": "gatherings",
+            "title": "Expiation of assembly (Kaffaratul Majlis)",
+            "arabic": "سُبْحَانَكَ اللَّهُمَّ وَبِحَمْدِكَ، أَشْهَدُ أَنْ لَا إِلَهَ إِلَّا أَنْتَ، أَسْتَغْفِرُكَ وَأَتُوبُ إِلَيْكَ",
+            "translit": "Subhanaka Allahumma wa bihamdika, ash-hadu an la ilaha illa Anta, astaghfiruka wa atubu ilayka",
+            "trans": "Glory is to You, O Allah, and praise is to You. I bear witness that there is none worthy of worship but You. I seek Your forgiveness and repent to You."
         },
         {
-            cat: 'death',
-            title: 'Dua in difficulty',
-            arabic: 'اللَّهُمَّ إِنِّي أَسْأَلُكَ الْعَفْوَ وَالْعَافِيَةَ',
-            translit: 'Allahumma inni asaluka alafwa walafyah',
-            trans: 'O Allah, I ask You for pardon and well-being'
+            "cat": "protection_of_iman",
+            "title": "For steadfastness in Iman",
+            "arabic": "يَا مُقَلِّبَ الْقُلُوبِ ثَبِّتْ قَلْبِي عَلَى دِينِكَ",
+            "translit": "Ya Muqallibal-qulubi thabbit qalbi 'ala dinik",
+            "trans": "O Changer of the hearts, make my heart firm upon Your religion."
         },
         {
-            cat: 'nature',
-            title: 'Dua for Rain',
-            arabic: 'اللَّهُمَّ صَيِّبًا نَافِعًا',
-            translit: 'Allahumma sayyiban nafi\'an',
-            trans: 'O Allah, (let this rain be) beneficial'
+            "cat": "hajj_umrah",
+            "title": "Talbiyah",
+            "arabic": "لَبَّيْكَ اللَّهُمَّ لَبَّيْكَ",
+            "translit": "Labbayk Allahumma Labbayk",
+            "trans": "Here I am, O Allah, here I am."
+        },
+        {
+            "cat": "money_shopping",
+            "title": "Entering a market",
+            "arabic": "لَا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ",
+            "translit": "La ilaha illallah wahdahu la sharika lah, lahul mulku wa lahul hamdu",
+            "trans": "None has the right to be worshipped but Allah alone, Who has no partner. His is the dominion and His is the praise."
+        },
+        {
+            "cat": "social_interactions",
+            "title": "Smiling",
+            "arabic": "تَبَسُّمُكَ فِي وَجْهِ أَخِيكَ لَكَ صَدَقَةٌ",
+            "translit": "Tabassumuka fi wajhi akhika laka sadaqah",
+            "trans": "Your smiling in the face of your brother is charity."
+        },
+        {
+            "cat": "marriage_children",
+            "title": "Congratulating newlyweds",
+            "arabic": "بَارَكَ اللَّهُ لَكَ، وَبَارَكَ عَلَيْكَ، وَجَمَعَ بَيْنَكُمَا فِي خَيْرٍ",
+            "translit": "Barakallahu laka, wa baraka 'alayka, wa jama'a baynakuma fi khayr",
+            "trans": "May Allah bless for you, and may He bless on you, and combine both of you in good."
+        },
+        {
+            "cat": "death",
+            "title": "When a tragedy strikes",
+            "arabic": "إِنَّا لِلَّهِ وَإِنَّا إِلَيْهِ رَاجِعُونَ، اللَّهُمَّ أْجُرْنِي فِي مُصِيبَتِي وَأَخْلِفْ لِي خَيْرًا مِنْهَا",
+            "translit": "Inna lillahi wa inna ilayhi raji'un. Allahumma-jurni fi musibati, wa akhlif li khayran minha",
+            "trans": "To Allah we belong and unto Him is our return. O Allah, recompense me for my affliction and replace it for me with something better."
+        },
+        {
+            "cat": "nature",
+            "title": "When it rains",
+            "arabic": "اللَّهُمَّ صَيِّبًا نَافِعًا",
+            "translit": "Allahumma sayyiban nafi'a",
+            "trans": "O Allah, (bring) beneficial rain clouds."
         }
     ];
 
@@ -3761,24 +3966,71 @@ function getOfflineHijri(date = new Date()) {
 }
 
 async function fetchPrayerTimes() {
+    // If the prayer engine is available, use it for a coordinate-based fetch
+    if (window.prayerEngine) {
+        try {
+            await window.prayerEngine.refresh();
+            updateDate();
+            if (state.settings.dynamicPrayerTheme && typeof refreshPrayerTheme === 'function') refreshPrayerTheme();
+            if (state.currentScreen === 'dashboard') renderDashboard();
+            return;
+        } catch (e) {
+            console.warn('[fetchPrayerTimes] Engine refresh failed, falling back to city API', e);
+        }
+    }
+
+    // Legacy fallback: city/country-based fetch
     try {
         const { method, school, hijriOffset } = state.settings;
         const { city, country } = state.location;
         const adj = hijriOffset || 0;
-        const res = await fetch(`https://api.aladhan.com/v1/timingsByCity?city=${city}&country=${country}&method=${method}&school=${school}&adj=${adj}`);
+        const res = await fetch(`https://api.aladhan.com/v1/timingsByCity?city=${encodeURIComponent(city)}&country=${encodeURIComponent(country)}&method=${method}&school=${school}&adj=${adj}`);
         const data = await res.json();
         if (data.code === 200) {
-            state.prayerTimes = data.data.timings;
+            // Strip timezone suffixes from timings
+            const timings = {};
+            for (const [k, v] of Object.entries(data.data.timings)) {
+                timings[k] = v.split(' ')[0];
+            }
+            state.prayerTimes = timings;
             state.hijri = data.data.date.hijri;
             state.coordinates = data.data.meta;
             localStorage.setItem('hijri_data', JSON.stringify(state.hijri));
             localStorage.setItem('prayer_times', JSON.stringify(state.prayerTimes));
-            updateDate(); // Synchronize sidebar date
+            // Also save to engine cache
+            const dk = new Date().toLocaleDateString('en-CA');
+            localStorage.setItem('pe_timings_' + dk, JSON.stringify(timings));
+            localStorage.setItem('pe_last_fetch', new Date().toISOString());
+            
+            // Handle manual Hijri offset robustly using gToH
+            if (adj !== 0) {
+                const targetDate = new Date();
+                targetDate.setDate(targetDate.getDate() + adj);
+                const gDate = `${targetDate.getDate().toString().padStart(2, '0')}-${(targetDate.getMonth()+1).toString().padStart(2, '0')}-${targetDate.getFullYear()}`;
+                
+                try {
+                    const r = await fetch(`https://api.aladhan.com/v1/gToH/${gDate}`);
+                    const adjData = await r.json();
+                    if (adjData.code === 200 && adjData.data && adjData.data.hijri) {
+                        state.hijri = adjData.data.hijri;
+                        localStorage.setItem('hijri_data', JSON.stringify(adjData.data.hijri));
+                    }
+                } catch (e) {
+                    console.warn('Hijri adjustment fetch failed', e);
+                }
+            }
+            
+            updateDate();
             if (state.settings.dynamicPrayerTheme && typeof refreshPrayerTheme === 'function') refreshPrayerTheme();
             if (state.currentScreen === 'dashboard') renderDashboard();
         }
     } catch (e) {
-        console.warn("Failed to fetch prayer times", e);
+        console.warn('Failed to fetch prayer times', e);
+        // Load from cache if available
+        const cached = localStorage.getItem('prayer_times');
+        if (cached && !state.prayerTimes) {
+            try { state.prayerTimes = JSON.parse(cached); } catch (_) {}
+        }
     }
 }
 
@@ -3789,34 +4041,55 @@ async function detectLocation() {
     }
 
     const btn = document.getElementById('detect-loc-btn');
-    const originalText = btn.innerHTML;
-    btn.innerHTML = 'Locating...';
-    btn.disabled = true;
+    if (btn) { btn.innerHTML = '📡 Locating...'; btn.disabled = true; }
+    const originalText = btn ? btn.innerHTML : '';
 
-    navigator.geolocation.getCurrentPosition(async (pos) => {
-        try {
-            const { latitude, longitude } = pos.coords;
-            const res = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`);
-            const data = await res.json();
-
-            state.location = { city: data.city || data.locality, country: data.countryCode };
-            localStorage.setItem('location', JSON.stringify(state.location));
-
-            // Refresh settings UI if visible
-            if (state.currentScreen === 'settings') renderSettings();
-            fetchPrayerTimes();
-            alert(`Location detected: ${state.location.city}, ${state.location.country}`);
-        } catch (e) {
-            alert('Failed to identify city from coordinates.');
-        } finally {
-            btn.innerHTML = originalText;
-            btn.disabled = false;
+    try {
+        // If prayer engine is available, use its smart detection
+        if (window.prayerEngine) {
+            const ok = await window.prayerEngine.detectAndFetch(false);
+            if (ok) {
+                if (state.currentScreen === 'settings') renderSettings();
+                if (state.currentScreen === 'dashboard') renderDashboard();
+                const loc = state.location;
+                if (loc && loc.city) alert(`Location detected: ${loc.city}, ${loc.country}`);
+                if (btn) { btn.innerHTML = originalText; btn.disabled = false; }
+                return;
+            }
         }
-    }, () => {
-        alert('Permission denied or location unavailable.');
-        btn.innerHTML = originalText;
-        btn.disabled = false;
-    });
+
+        // Legacy fallback
+        navigator.geolocation.getCurrentPosition(async (pos) => {
+            try {
+                const { latitude, longitude } = pos.coords;
+                // Store coordinates
+                state.coordinates = { latitude, longitude };
+                localStorage.setItem('pe_coords', JSON.stringify({ lat: latitude, lon: longitude }));
+
+                const res = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`);
+                const data = await res.json();
+                const city = data.city || data.locality || data.principalSubdivision || 'Unknown';
+                const country = data.countryCode || 'SA';
+
+                state.location = { city, country };
+                localStorage.setItem('location', JSON.stringify(state.location));
+
+                if (state.currentScreen === 'settings') renderSettings();
+                fetchPrayerTimes();
+                alert(`Location detected: ${city}, ${country}`);
+            } catch (e) {
+                alert('Failed to identify city from coordinates.');
+            } finally {
+                if (btn) { btn.innerHTML = originalText; btn.disabled = false; }
+            }
+        }, () => {
+            alert('Permission denied or location unavailable.');
+            if (btn) { btn.innerHTML = originalText; btn.disabled = false; }
+        }, { timeout: 10000, maximumAge: 300000 });
+    } catch (e) {
+        if (btn) { btn.innerHTML = originalText; btn.disabled = false; }
+        alert('Location detection failed. Please enter your city manually.');
+    }
 }
 
 function renderLearn() {
@@ -3924,9 +4197,16 @@ function renderNearby() {
 }
 
 async function startPrayerWatch() {
-    // Check every 30 seconds for better precision
+    // Clear any existing intervals
     if (window.prayerInterval) clearInterval(window.prayerInterval);
+    if (window.prayerCountdownInterval) clearInterval(window.prayerCountdownInterval);
 
+    // 1-second countdown updater — pure local math, zero API calls
+    window.prayerCountdownInterval = setInterval(() => {
+        updateCountdownDisplay();
+    }, 1000);
+
+    // 30-second alarm checker (preserved from original)
     window.prayerInterval = setInterval(() => {
         if (!state.prayerTimes || !state.settings.alarmsEnabled) return;
 
@@ -3934,13 +4214,12 @@ async function startPrayerWatch() {
         const currentTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
         const seconds = now.getSeconds();
 
-        // Only trigger at the start of the minute (seconds < 30) to avoid double triggers
+        // Only trigger at the start of the minute to avoid double-triggers
         if (seconds > 30) return;
 
         ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'].forEach(p => {
             const prayerTime = state.prayerTimes[p];
             if (prayerTime === currentTime) {
-                // Check if already triggered this minute to prevent loops
                 const lastTrigger = localStorage.getItem(`last_alarm_${p}`);
                 const today = now.toDateString();
                 if (lastTrigger !== `${today}_${currentTime}`) {
@@ -3951,6 +4230,74 @@ async function startPrayerWatch() {
         });
     }, 30000);
 }
+
+// ── Live Countdown Update (called every second by startPrayerWatch) ──
+function updateCountdownDisplay() {
+    if (!state.prayerTimes) return;
+
+    // Use engine if available, else compute locally
+    let next = null;
+    if (window.prayerEngine) {
+        next = window.prayerEngine.getNextPrayer();
+    } else {
+        next = getNextPrayer();
+    }
+    if (!next) return;
+
+    // Update countdown elements (rendered in dashboard prayer widget)
+    const cdEl = document.getElementById('pe-countdown');
+    const nextNameEl = document.getElementById('pe-next-name');
+    const nextTimeEl = document.getElementById('pe-next-time');
+
+    if (cdEl) {
+        const sec = next.remainingSeconds || (next.minutesLeft ? next.minutesLeft * 60 : 0);
+        cdEl.textContent = window.formatHMShort ? window.formatHMShort(sec) : formatPrayerCountdown(sec);
+    }
+    if (nextNameEl) nextNameEl.textContent = next.name;
+    if (nextTimeEl) nextTimeEl.textContent = formatPrayerTime(next.time);
+
+    // Also update dashboard prayer list active state every minute
+    const now = new Date();
+    if (now.getSeconds() === 0) {
+        updateDashboardPrayers();
+    }
+}
+
+function formatPrayerCountdown(totalSeconds) {
+    if (!totalSeconds || totalSeconds < 0) return '00:00:00';
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+    if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
+    if (m > 0) return `${m}m ${String(s).padStart(2, '0')}s`;
+    return `${s}s`;
+}
+
+// Updates the prayer list active state every minute (called from countdown loop)
+function updateDashboardPrayers() {
+    const list = document.getElementById('dashboard-prayer-list');
+    if (!list || !state.prayerTimes) return;
+
+    const next = getNextPrayer();
+    if (!next) return;
+
+    const items = list.querySelectorAll('.prayer-item');
+    const prayerOrder = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+
+    items.forEach((item, idx) => {
+        const name = prayerOrder[idx];
+        if (!name) return;
+        const isNext = next.name === name;
+        item.style.color = isNext ? 'var(--accent-emerald)' : 'var(--text-secondary)';
+        item.classList.toggle('active', isNext);
+
+        const nameEl = item.querySelector('span:first-child');
+        if (nameEl) {
+            nameEl.style.fontWeight = isNext ? '800' : '600';
+        }
+    });
+}
+
 
 function triggerPrayerAlarm(name) {
     if (!state.settings.alarmsEnabled) return;
@@ -4017,8 +4364,47 @@ async function renderSettings() {
         { id: 2, name: 'Islamic Society of North America (ISNA)' },
         { id: 3, name: 'Muslim World League' },
         { id: 4, name: 'Umm Al-Qura University, Makkah' },
-        { id: 5, name: 'Egyptian General Authority of Survey' }
+        { id: 5, name: 'Egyptian General Authority of Survey' },
+        { id: 8, name: 'Dubai — Gulf Region' },
+        { id: 13, name: 'Diyanet İşleri Başkanlığı — Turkey' }
     ];
+
+    // Prayer Engine status
+    const peStatus = window.prayerEngine ? window.prayerEngine.getStatus() : null;
+    const peStatusHtml = peStatus ? `
+        <div class="glass-card" style="margin-bottom: 1.5rem; padding: 1.5rem;">
+            <h3 class="section-title" style="color: var(--accent-emerald);">🛰️ Prayer Engine Status</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1.25rem;">
+                <div style="background: rgba(255,255,255,0.04); border-radius: 12px; padding: 0.85rem;">
+                    <div style="font-size: 0.6rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.35rem;">GPS Coordinates</div>
+                    <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-primary);">${peStatus.coords}</div>
+                </div>
+                <div style="background: rgba(255,255,255,0.04); border-radius: 12px; padding: 0.85rem;">
+                    <div style="font-size: 0.6rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.35rem;">Last Sync</div>
+                    <div style="font-size: 0.78rem; font-weight: 700; color: var(--text-primary);">${peStatus.lastFetch}</div>
+                </div>
+                <div style="background: rgba(255,255,255,0.04); border-radius: 12px; padding: 0.85rem;">
+                    <div style="font-size: 0.6rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.35rem;">Today Cache</div>
+                    <div style="font-size: 0.85rem; font-weight: 800; color: ${peStatus.todayCache ? 'var(--accent-emerald)' : '#ef4444'};">${peStatus.todayCache ? '✓ Cached' : '✗ Missing'}</div>
+                </div>
+                <div style="background: rgba(255,255,255,0.04); border-radius: 12px; padding: 0.85rem;">
+                    <div style="font-size: 0.6rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.35rem;">Tomorrow Cache</div>
+                    <div style="font-size: 0.85rem; font-weight: 800; color: ${peStatus.tomorrowCache ? 'var(--accent-emerald)' : 'var(--text-muted)'};">${peStatus.tomorrowCache ? '✓ Ready' : '— Not cached'}</div>
+                </div>
+            </div>
+            <div style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 1rem;">⚡ Method: ${peStatus.method} &nbsp;|&nbsp; 🌐 TZ: ${peStatus.timezone}${peStatus.isRamadan ? ' &nbsp;|&nbsp; 🌙 Ramadan Active' : ''}</div>
+            <div style="display: flex; gap: 0.75rem;">
+                <button class="dhikr-chip active" onclick="window.app.detectLocation()" style="flex:1; padding:0.75rem; border-radius:12px; font-size:0.8rem;">
+                    📡 Detect GPS Location
+                </button>
+                <button class="dhikr-chip" onclick="window.app.refreshPrayerTimes(true)" style="flex:1; padding:0.75rem; border-radius:12px; font-size:0.8rem;">
+                    🔄 Force Refresh Timings
+                </button>
+            </div>
+        </div>
+    ` : '';
+
+
 
     const appearanceThemes = [
         { id: 'theme-midnight-noor', name: 'Midnight Noor', desc: 'Moonlit navy with blue glow', bg: 'linear-gradient(135deg,#06111d,#0e7cc1)', text: '#e0f2fe', dots: ['#38bdf8', '#0e7cc1', '#60a5d5'] },
@@ -4061,6 +4447,8 @@ async function renderSettings() {
                 <button class="btn-back" onclick="window.app.loadScreen('dashboard')">${t('back')}</button>
             </div>
             
+            ${peStatusHtml}
+
             <div class="glass-card">
             <h3 class="section-title">${t('location_settings')}</h3>
             <div style="margin-bottom: 1.5rem;">
@@ -4079,6 +4467,41 @@ async function renderSettings() {
                 <input type="text" id="set-country" placeholder="e.g. GB" value="${state.location.country}">
             </div>
             <button class="btn-primary" onclick="window.app.saveLocation()">${t('update_location')}</button>
+        </div>
+
+        <div class="glass-card">
+            <h3 class="section-title">Hijri Calendar Settings</h3>
+            
+            <div class="form-group">
+                <label>Manual Hijri Adjustment (Days)</label>
+                <select id="set-hijri-offset" style="width: 100%; height: 45px; background: var(--glass-bg); border: 1px solid var(--glass-border); color: var(--text-primary); border-radius: 12px; padding: 0 1rem; outline: none;">
+                    <option value="-2" ${state.settings.hijriOffset === -2 ? 'selected' : ''}>-2 Days</option>
+                    <option value="-1" ${state.settings.hijriOffset === -1 ? 'selected' : ''}>-1 Day</option>
+                    <option value="0" ${state.settings.hijriOffset === 0 ? 'selected' : ''}>0 (No Adjustment)</option>
+                    <option value="1" ${state.settings.hijriOffset === 1 ? 'selected' : ''}>+1 Day</option>
+                    <option value="2" ${state.settings.hijriOffset === 2 ? 'selected' : ''}>+2 Days</option>
+                </select>
+                <p style="font-size: 0.6rem; color: var(--text-secondary); margin-top: 0.4rem;">Shift the calendar by a day or two to match your local moon sighting.</p>
+            </div>
+            
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem;">
+                <div>
+                    <h4 style="margin: 0;">Islamic Day Starts After Maghrib</h4>
+                    <p style="font-size: 0.75rem; color: var(--text-secondary);">Advances the Hijri date dynamically at sunset</p>
+                </div>
+                <input type="checkbox" id="set-hijri-maghrib" ${state.settings.hijriAfterMaghrib ? 'checked' : ''}>
+            </div>
+
+            <div class="form-group" style="margin-top: 1rem;">
+                <label>Hijri Month Language</label>
+                <select id="set-hijri-lang" style="width: 100%; height: 45px; background: var(--glass-bg); border: 1px solid var(--glass-border); color: var(--text-primary); border-radius: 12px; padding: 0 1rem; outline: none;">
+                    <option value="en" ${state.settings.hijriLanguage === 'en' ? 'selected' : ''}>English (e.g. Ramadan)</option>
+                    <option value="ar" ${state.settings.hijriLanguage === 'ar' ? 'selected' : ''}>Arabic (e.g. رمضان)</option>
+                    <option value="both" ${state.settings.hijriLanguage === 'both' ? 'selected' : ''}>Both (Ramadan - رمضان)</option>
+                </select>
+            </div>
+            
+            <button class="btn-primary" style="margin-top: 1rem; width: 100%;" onclick="window.app.saveSettings()">Save Hijri Settings</button>
         </div>
 
         <div class="glass-card">
@@ -4493,6 +4916,28 @@ function saveSettings() {
     state.settings.alarmsEnabled = alarmsEnabledEl ? alarmsEnabledEl.checked : state.settings.alarmsEnabled;
     state.settings.tajweedEnabled = tajweedEl ? tajweedEl.checked : state.settings.tajweedEnabled;
 
+    const hijriOffsetEl = document.getElementById('set-hijri-offset');
+    const hijriMaghribEl = document.getElementById('set-hijri-maghrib');
+    const hijriLangEl = document.getElementById('set-hijri-lang');
+    
+    let refetchRequired = false;
+    
+    if (hijriOffsetEl && parseInt(hijriOffsetEl.value) !== state.settings.hijriOffset) {
+        state.settings.hijriOffset = parseInt(hijriOffsetEl.value);
+        localStorage.setItem('hijri_offset', state.settings.hijriOffset);
+        refetchRequired = true; // Need new Aladhan data
+    }
+
+    if (hijriMaghribEl) {
+        state.settings.hijriAfterMaghrib = hijriMaghribEl.checked;
+        localStorage.setItem('hijri_after_maghrib', state.settings.hijriAfterMaghrib);
+    }
+    
+    if (hijriLangEl) {
+        state.settings.hijriLanguage = hijriLangEl.value;
+        localStorage.setItem('hijri_language', state.settings.hijriLanguage);
+    }
+
     localStorage.setItem('app_settings', JSON.stringify(state.settings));
     localStorage.setItem('tajweed_enabled', state.settings.tajweedEnabled);
 
@@ -4529,7 +4974,14 @@ function saveSettings() {
         document.body.classList.remove('ramadan-mode');
     }
 
-    fetchPrayerTimes();
+    if (refetchRequired) {
+        // Clear caches and force refetch
+        localStorage.removeItem('salafiyah_timings_' + window.prayerEngine.todayKey());
+        fetchPrayerTimes();
+    } else {
+        fetchPrayerTimes();
+    }
+    
     syncUserData();
     alert('Preferences saved!');
 }
@@ -4668,7 +5120,8 @@ async function renderHadithWidget() {
 function getNextPrayer() {
     if (!state.prayerTimes) return null;
     const now = new Date();
-    const currentTime = now.getHours() * 60 + now.getMinutes();
+    const nowSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
     const prayerOrder = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
     const prayers = prayerOrder.map(name => ({
@@ -4678,16 +5131,34 @@ function getNextPrayer() {
 
     for (let p of prayers) {
         if (!p.time) continue;
-        const [h, m] = p.time.split(':').map(Number);
-        const pTime = h * 60 + m;
-        if (pTime > currentTime) return { ...p, minutesLeft: pTime - currentTime };
+        const clean = p.time.split(' ')[0]; // strip timezone suffix
+        const [h, m] = clean.split(':').map(Number);
+        const pMin = h * 60 + m;
+        const pSec = h * 3600 + m * 60;
+        if (pMin > currentMinutes) {
+            return {
+                ...p,
+                time: clean,
+                minutesLeft: pMin - currentMinutes,
+                remainingSeconds: pSec - nowSec
+            };
+        }
     }
 
-    // Default to Tomorrow's Fajr
+    // All prayers passed — next is Fajr (tomorrow)
     if (prayers[0] && prayers[0].time) {
-        const [fh, fm] = prayers[0].time.split(':').map(Number);
-        const fTime = (fh + 24) * 60 + fm;
-        return { ...prayers[0], name: 'Fajr (Tomorrow)', minutesLeft: fTime - currentTime };
+        const clean = prayers[0].time.split(' ')[0];
+        const [fh, fm] = clean.split(':').map(Number);
+        const fMin = (fh + 24) * 60 + fm;
+        const fSec = fh * 3600 + fm * 60;
+        const remaining = (86400 - nowSec) + fSec;
+        return {
+            ...prayers[0],
+            time: clean,
+            name: 'Fajr',
+            minutesLeft: fMin - currentMinutes,
+            remainingSeconds: remaining
+        };
     }
     return null;
 }
