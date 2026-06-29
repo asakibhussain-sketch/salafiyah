@@ -8,7 +8,10 @@ import uvicorn
 import os
 import sqlite3
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
+import secrets
+import hashlib
+import httpx
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -85,6 +88,15 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users (id)
         )
     ''')
+    # OTPs table for Email Authentication
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS otps (
+            email TEXT PRIMARY KEY,
+            otp_hash TEXT NOT NULL,
+            expires_at TIMESTAMP NOT NULL,
+            attempts INTEGER DEFAULT 0
+        )
+    ''')
     conn.commit()
     conn.close()
 
@@ -99,7 +111,6 @@ class AuthRequest(BaseModel):
 
 # Temporary OTP storage
 # In a real app, use Redis or a DB table with expiry
-otps = {}
 
 class SyncRequest(BaseModel):
     email: str
@@ -124,27 +135,136 @@ app.add_middleware(
 
 @app.post("/api/auth/request-otp")
 async def request_otp(req: AuthRequest):
-    import random
+    # Check for recent OTP to prevent spam (60-second cooldown)
+    res = execute_query(
+        "SELECT expires_at FROM otps WHERE email = %s",
+        (req.email,),
+        fetch="one"
+    )
+    if res["result"]:
+        expires_at_str = res["result"][0]
+        try:
+            expires_at = datetime.fromisoformat(expires_at_str)
+            # If generated less than 60 seconds ago (expires in > 4 mins)
+            if (expires_at - datetime.utcnow()).total_seconds() > 240:
+                raise HTTPException(status_code=429, detail="Please wait 60 seconds before requesting another code")
+        except ValueError:
+            pass
+
     # Generate 6-digit OTP
-    code = str(random.randint(100000, 999999))
-    otps[req.email] = code
+    code = f"{secrets.randbelow(1000000):06d}"
+    otp_hash = hashlib.sha256(code.encode()).hexdigest()
+    expires_at = datetime.utcnow() + timedelta(minutes=5)
     
-    # MOCK: Send OTP to user
-    print("\n" + "="*40)
-    print(f"MOCK EMAIL SENT TO: {req.email}")
-    print(f"SUBJECT: Your Salafiyah Verification Code")
-    print(f"MESSAGE: Your One-Time Password is: {code}")
-    print("="*40 + "\n")
+    execute_query(
+        """
+        INSERT INTO otps (email, otp_hash, expires_at, attempts) 
+        VALUES (%s, %s, %s, 0)
+        ON CONFLICT(email) DO UPDATE SET 
+            otp_hash=excluded.otp_hash, 
+            expires_at=excluded.expires_at, 
+            attempts=0
+        """,
+        (req.email, otp_hash, expires_at.isoformat()),
+        commit=True
+    )
     
-    return {"status": "success", "message": "OTP sent to your email (Mocked in console)"}
+    # Send OTP via Resend or Brevo
+    resend_api_key = os.getenv("RESEND_API_KEY")
+    brevo_api_key = os.getenv("BREVO_API_KEY")
+    
+    if brevo_api_key:
+        try:
+            async with httpx.AsyncClient() as client:
+                await client.post(
+                    "https://api.brevo.com/v3/smtp/email",
+                    headers={
+                        "api-key": brevo_api_key,
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "sender": {"name": "Salafiyah", "email": "asakibhussain@gmail.com"},
+                        "to": [{"email": req.email}],
+                        "subject": "Your Salafiyah Verification Code",
+                        "htmlContent": f"""
+                        <div style="font-family: sans-serif; text-align: center; padding: 20px;">
+                            <h2 style="color: #3b82f6;">Salafiyah Authentication</h2>
+                            <p>Your one-time verification code is:</p>
+                            <h1 style="font-size: 32px; letter-spacing: 5px; background: #f3f4f6; padding: 10px; border-radius: 8px;">{code}</h1>
+                            <p style="color: #6b7280; font-size: 12px;">This code will expire in 5 minutes.</p>
+                        </div>
+                        """
+                    }
+                )
+        except Exception as e:
+            print(f"Failed to send email via Brevo: {e}")
+    elif resend_api_key:
+        try:
+            async with httpx.AsyncClient() as client:
+                await client.post(
+                    "https://api.resend.com/emails",
+                    headers={"Authorization": f"Bearer {resend_api_key}"},
+                    json={
+                        "from": "Salafiyah <onboarding@resend.dev>",
+                        "to": req.email,
+                        "subject": "Your Salafiyah Verification Code",
+                        "html": f"""
+                        <div style="font-family: sans-serif; text-align: center; padding: 20px;">
+                            <h2 style="color: #3b82f6;">Salafiyah Authentication</h2>
+                            <p>Your one-time verification code is:</p>
+                            <h1 style="font-size: 32px; letter-spacing: 5px; background: #f3f4f6; padding: 10px; border-radius: 8px;">{code}</h1>
+                            <p style="color: #6b7280; font-size: 12px;">This code will expire in 5 minutes.</p>
+                        </div>
+                        """
+                    }
+                )
+        except Exception as e:
+            print(f"Failed to send email via Resend: {e}")
+    else:
+        print("\n" + "="*40)
+        print(f"MOCK EMAIL (No API key found)")
+        print(f"TO: {req.email}\nCODE: {code}")
+        print("="*40 + "\n")
+    
+    return {"status": "success", "message": "OTP sent"}
+
+def verify_otp_internal(email: str, otp: str):
+    res = execute_query(
+        "SELECT otp_hash, expires_at, attempts FROM otps WHERE email = %s",
+        (email,),
+        fetch="one"
+    )
+    if not res["result"]:
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
+    
+    otp_hash_db, expires_at_str, attempts = res["result"]
+    
+    try:
+        expires_at = datetime.fromisoformat(expires_at_str)
+        if datetime.utcnow() > expires_at:
+            execute_query("DELETE FROM otps WHERE email = %s", (email,), commit=True)
+            raise HTTPException(status_code=400, detail="OTP has expired")
+    except ValueError:
+        pass
+        
+    if attempts >= 5:
+        execute_query("DELETE FROM otps WHERE email = %s", (email,), commit=True)
+        raise HTTPException(status_code=400, detail="Too many failed attempts. Please request a new code.")
+        
+    input_hash = hashlib.sha256(otp.encode()).hexdigest()
+    if input_hash != otp_hash_db:
+        execute_query("UPDATE otps SET attempts = attempts + 1 WHERE email = %s", (email,), commit=True)
+        raise HTTPException(status_code=400, detail="Invalid OTP")
+        
+    execute_query("DELETE FROM otps WHERE email = %s", (email,), commit=True)
+    return True
 
 @app.post("/api/auth/signup")
 async def signup(req: AuthRequest):
     if not req.password:
         raise HTTPException(status_code=400, detail="Password is required")
-    # Verify OTP first
-    if req.email not in otps or otps[req.email] != req.otp:
-        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
+    
+    verify_otp_internal(req.email, req.otp)
     
     try:
         res = execute_query(
@@ -154,8 +274,6 @@ async def signup(req: AuthRequest):
             commit=True
         )
         user_id = res["result"][0]
-        # Clear OTP after use
-        del otps[req.email]
         return {"status": "success", "user_id": user_id, "email": req.email}
     except Exception as e:
         if "IntegrityError" in type(e).__name__ or "UNIQUE" in str(e):
@@ -164,22 +282,16 @@ async def signup(req: AuthRequest):
 
 @app.post("/api/auth/forgot-password")
 async def forgot_password(req: AuthRequest):
-    # Step 1: User requests OTP (handled by /request-otp)
-    # Step 2: User submits OTP and New Password
-    if req.email not in otps or otps[req.email] != req.otp:
-        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
+    verify_otp_internal(req.email, req.otp)
     
     res = execute_query(
         "UPDATE users SET password = %s WHERE email = %s",
         (req.new_password, req.email),
         commit=True
     )
-    affected = res["rowcount"]
-    
-    if affected == 0:
+    if res["rowcount"] == 0:
         raise HTTPException(status_code=404, detail="User not found")
         
-    del otps[req.email]
     return {"status": "success", "message": "Password updated successfully"}
 
 @app.post("/api/auth/login")

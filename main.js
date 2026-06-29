@@ -5254,9 +5254,15 @@ function renderAuthForm(mode) {
             <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 2rem;">${sub}</p>
             
             ${isOTP ? `
-                <div class="form-group">
-                    <label>Enter 6-Digit OTP</label>
-                    <input type="text" id="auth-otp" placeholder="123456" maxlength="6" style="width: 100%; padding: 0.8rem; border-radius: 10px; background: rgba(0,0,0,0.05); border: 1px solid var(--glass-border); color: var(--text-primary); outline: none; font-size: 1.2rem; letter-spacing: 0.3em; text-align: center;">
+                <div class="form-group" style="text-align: center;">
+                    <label style="margin-bottom: 0.8rem; display: block;">Enter 6-Digit OTP</label>
+                    <div id="otp-container" style="display: flex; gap: 0.4rem; justify-content: center;">
+                        ${[1,2,3,4,5,6].map(i => `
+                            <input type="text" class="otp-input" maxlength="1" style="width: 45px; height: 50px; text-align: center; font-size: 1.5rem; font-weight: 700; border-radius: 10px; background: rgba(0,0,0,0.05); border: 1px solid var(--glass-border); color: var(--text-primary); outline: none; transition: border-color 0.2s;">
+                        `).join('')}
+                    </div>
+                    <input type="hidden" id="auth-otp">
+                    <button id="resend-otp-btn" style="margin-top: 1rem; background: none; border: none; color: var(--primary-blue); cursor: pointer; font-size: 0.85rem; padding: 0.5rem; transition: opacity 0.3s;" onclick="window.app.handleResendOTP('${mode}')" disabled>Resend Code (60s)</button>
                 </div>
                 ${mode === 'forgot-otp' ? `
                     <div class="form-group">
@@ -5292,6 +5298,102 @@ function renderAuthForm(mode) {
             </div>
         </div>
     `;
+    
+    if (isOTP) {
+        setupOTPInputs();
+        startResendTimer();
+    }
+}
+
+function setupOTPInputs() {
+    const inputs = document.querySelectorAll('.otp-input');
+    const hiddenInput = document.getElementById('auth-otp');
+    if (!inputs.length) return;
+    
+    inputs[0].focus();
+    
+    inputs.forEach((input, index) => {
+        input.addEventListener('input', (e) => {
+            if (e.target.value.length > 0) {
+                if (index < inputs.length - 1) inputs[index + 1].focus();
+            }
+            updateHiddenOTP();
+        });
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Backspace' && e.target.value === '' && index > 0) {
+                inputs[index - 1].focus();
+            }
+        });
+        input.addEventListener('paste', (e) => {
+            e.preventDefault();
+            const pastedData = e.clipboardData.getData('text').replace(/[^0-9]/g, '').slice(0, 6).split('');
+            inputs.forEach((inp, i) => {
+                inp.value = pastedData[i] || '';
+            });
+            updateHiddenOTP();
+            if (pastedData.length > 0) {
+                inputs[Math.min(pastedData.length, 5)].focus();
+            }
+        });
+    });
+
+    function updateHiddenOTP() {
+        hiddenInput.value = Array.from(inputs).map(i => i.value).join('');
+    }
+}
+
+let resendInterval;
+function startResendTimer() {
+    const btn = document.getElementById('resend-otp-btn');
+    if (!btn) return;
+    clearInterval(resendInterval);
+    let seconds = 60;
+    btn.disabled = true;
+    btn.style.opacity = '0.5';
+    btn.innerText = `Resend Code (${seconds}s)`;
+    
+    resendInterval = setInterval(() => {
+        seconds--;
+        if (seconds <= 0) {
+            clearInterval(resendInterval);
+            btn.disabled = false;
+            btn.style.opacity = '1';
+            btn.innerText = 'Resend Code';
+        } else {
+            btn.innerText = `Resend Code (${seconds}s)`;
+        }
+    }, 1000);
+}
+
+window.app.handleResendOTP = async function(mode) {
+    const btn = document.getElementById('resend-otp-btn');
+    if (btn.disabled) return;
+    const email = window.tempAuthEmail;
+    if (!email) return;
+    
+    btn.innerText = 'Sending...';
+    btn.disabled = true;
+    try {
+        const res = await fetch('/api/auth/request-otp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email })
+        });
+        if (res.ok) {
+            startResendTimer();
+        } else {
+            const d = await res.json();
+            alert(d.detail || 'Failed to resend OTP.');
+            btn.disabled = false;
+            btn.innerText = 'Resend Code';
+            btn.style.opacity = '1';
+        }
+    } catch(e) {
+        alert('Network error.');
+        btn.disabled = false;
+        btn.innerText = 'Resend Code';
+        btn.style.opacity = '1';
+    }
 }
 
 async function handleAuthSubmit(mode) {
@@ -5324,6 +5426,13 @@ async function handleAuthSubmit(mode) {
     const otp = document.getElementById('auth-otp')?.value;
     const pass = window.tempAuthPass || document.getElementById('auth-pass')?.value;
     const newPass = document.getElementById('auth-new-pass')?.value;
+
+    if (mode === 'signup-otp' || mode === 'forgot-otp') {
+        if (!otp || otp.length !== 6) {
+            alert('Please enter the full 6-digit verification code.');
+            return;
+        }
+    }
 
     let endpoint = '/api/auth/login';
     let body = { email, password: pass };
