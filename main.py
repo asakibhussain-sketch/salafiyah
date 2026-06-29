@@ -240,11 +240,15 @@ def verify_otp_internal(email: str, otp: str):
     otp_hash_db, expires_at_str, attempts = res["result"]
     
     try:
-        expires_at = datetime.fromisoformat(expires_at_str)
+        if isinstance(expires_at_str, str):
+            expires_at = datetime.fromisoformat(expires_at_str)
+        else:
+            expires_at = expires_at_str # Already a datetime object (psycopg2)
+            
         if datetime.utcnow() > expires_at:
             execute_query("DELETE FROM otps WHERE email = %s", (email,), commit=True)
             raise HTTPException(status_code=400, detail="OTP has expired")
-    except ValueError:
+    except (ValueError, TypeError):
         pass
         
     if attempts >= 5:
@@ -267,13 +271,17 @@ async def signup(req: AuthRequest):
     verify_otp_internal(req.email, req.otp)
     
     try:
-        res = execute_query(
-            "INSERT INTO users (email, password) VALUES (%s, %s) RETURNING id",
-            (req.email, req.password),
-            fetch="one",
-            commit=True
-        )
-        user_id = res["result"][0]
+        conn, db_type = get_db_connection()
+        cursor = conn.cursor()
+        if db_type == "postgres":
+            cursor.execute("INSERT INTO users (email, password) VALUES (%s, %s) RETURNING id", (req.email, req.password))
+            user_id = cursor.fetchone()[0]
+        else:
+            cursor.execute("INSERT INTO users (email, password) VALUES (?, ?)", (req.email, req.password))
+            user_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
         return {"status": "success", "user_id": user_id, "email": req.email}
     except Exception as e:
         if "IntegrityError" in type(e).__name__ or "UNIQUE" in str(e):
