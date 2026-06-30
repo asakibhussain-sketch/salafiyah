@@ -26,12 +26,12 @@
     const MAIN_PRAYERS = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
 
     const CALC_METHODS = {
-        1:  { id: 1,  name: 'Karachi — Univ. of Islamic Sciences' },
-        2:  { id: 2,  name: 'ISNA — Islamic Society of North America' },
-        3:  { id: 3,  name: 'Muslim World League' },
-        4:  { id: 4,  name: "Umm Al-Qura University, Makkah" },
-        5:  { id: 5,  name: 'Egyptian General Authority of Survey' },
-        8:  { id: 8,  name: 'Dubai — Gulf Region' },
+        1: { id: 1, name: 'Karachi — Univ. of Islamic Sciences' },
+        2: { id: 2, name: 'ISNA — Islamic Society of North America' },
+        3: { id: 3, name: 'Muslim World League' },
+        4: { id: 4, name: "Umm Al-Qura University, Makkah" },
+        5: { id: 5, name: 'Egyptian General Authority of Survey' },
+        8: { id: 8, name: 'Dubai — Gulf Region' },
         13: { id: 13, name: 'Diyanet İşleri Başkanlığı — Turkey' }
     };
 
@@ -98,7 +98,7 @@
         _lastCoords: null,
         _notifiedPrayers: {},  // {prayerName_date: true}
         _notificationTimers: [],
-        
+
         todayKey: todayKey,
 
         // ── Init ────────────────────────────────────────────────────────────────
@@ -121,7 +121,7 @@
             try {
                 const saved = localStorage.getItem(COORD_KEY);
                 if (saved) this._lastCoords = JSON.parse(saved);
-            } catch (_) {}
+            } catch (_) { }
         },
 
         _saveCoords(lat, lon) {
@@ -223,7 +223,7 @@
                         });
                     }
                 },
-                () => {},
+                () => { },
                 { enableHighAccuracy: false, timeout: 30000, maximumAge: 600000 }
             );
         },
@@ -252,7 +252,7 @@
                 const json = await res.json();
 
                 if (json.code === 200 && json.data) {
-                    await this._processTimings(json.data, dk);
+                    this._processTimings(json.data, dk);
                     localStorage.setItem(LAST_FETCH_KEY, new Date().toISOString());
                     return true;
                 }
@@ -276,7 +276,7 @@
                 const json = await res.json();
 
                 if (json.code === 200 && json.data) {
-                    await this._processTimings(json.data, dk);
+                    this._processTimings(json.data, dk);
 
                     // Extract coordinates from meta
                     if (json.data.meta && json.data.meta.latitude) {
@@ -317,14 +317,14 @@
                     if (data.date && data.date.hijri) {
                         window.state.hijri = data.date.hijri;
                         localStorage.setItem('hijri_data', JSON.stringify(data.date.hijri));
-                        
+
                         // Handle manual Hijri offset robustly using gToH
                         const adj = (window.state && window.state.settings && window.state.settings.hijriOffset) || 0;
                         if (adj !== 0) {
                             const targetDate = new Date(dateKey + 'T12:00:00');
                             targetDate.setDate(targetDate.getDate() + adj);
-                            const gDate = `${targetDate.getDate().toString().padStart(2, '0')}-${(targetDate.getMonth()+1).toString().padStart(2, '0')}-${targetDate.getFullYear()}`;
-                            
+                            const gDate = `${targetDate.getDate().toString().padStart(2, '0')}-${(targetDate.getMonth() + 1).toString().padStart(2, '0')}-${targetDate.getFullYear()}`;
+
                             try {
                                 const r = await fetch(`${ALADHAN_BASE}/gToH/${gDate}`);
                                 const adjData = await r.json();
@@ -357,7 +357,7 @@
             try {
                 const raw = localStorage.getItem(CACHE_PREFIX + dateKey);
                 if (raw) return JSON.parse(raw);
-            } catch (_) {}
+            } catch (_) { }
             return null;
         },
 
@@ -365,7 +365,7 @@
             try {
                 const raw = localStorage.getItem('hijri_data_' + dateKey);
                 if (raw) return JSON.parse(raw);
-            } catch (_) {}
+            } catch (_) { }
             return null;
         },
 
@@ -425,7 +425,7 @@
                     await this._fetchByCity(city, country, dk);
                 }
                 console.log('[PrayerEngine] Tomorrow prefetched:', dk);
-            } catch (_) {}
+            } catch (_) { }
         },
 
         // ── Daily Sync Loop ──────────────────────────────────────────────────────
@@ -603,10 +603,10 @@
             const afterMaghrib = (window.state && window.state.settings && window.state.settings.hijriAfterMaghrib) || false;
             const todayK = todayKey();
             const tomorrowK = tomorrowKey();
-            
+
             const todayCache = this.getCachedHijri(todayK);
             let activeHijri = todayCache;
-            
+
             if (afterMaghrib) {
                 const timings = this.getCachedTimings(todayK);
                 if (timings && timings.Maghrib) {
@@ -628,7 +628,7 @@
             if (m === 1 && d === 1) return "Islamic New Year";
             if (m === 1 && d === 10) return "Ashura";
             if (m === 3 && d === 12) return "Mawlid al-Nabi";
-            if (m === 7 && d === 27) return "Isra and Mi'raj"; 
+            if (m === 7 && d === 27) return "Isra and Mi'raj";
             if (m === 8 && d === 15) return "Mid-Sha'ban";
             if (m === 9 && d === 1) return "Ramadan Begins";
             if (m === 9 && d >= 21 && d % 2 !== 0) return "Laylat al-Qadr (Expected)";
@@ -785,7 +785,7 @@
                         badge: '/icon.png',
                         silent: !playAdhan
                     });
-                } catch (_) {}
+                } catch (_) { }
             }
         },
 

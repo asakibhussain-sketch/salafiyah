@@ -213,6 +213,13 @@ const getInitialState = () => {
             tasbih: { type: 'custom', target: 1000, progress: 0 },
             date: new Date().toDateString()
         },
+        recording: {
+            engine: null,
+            timer: null,
+            seconds: 0,
+            currentAyah: null,
+            isRecording: false
+        },
         calendarView: {
             month: new Date().getMonth() + 1,
             year: new Date().getFullYear()
@@ -5815,6 +5822,9 @@ async function loadSurah(id, scrollToAyah = null) {
                                             onclick="window.app.toggleBookmark('ayah', '${id}:${ayah.numberInSurah}', {surahId: ${id}, surahName: \`${arabic.englishName.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`, text: \`${transText.substring(0, 50).replace(/`/g, '\\`').replace(/\$/g, '\\$')}...\`}); this.classList.toggle('active');">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="${isBookmarked ? 'var(--accent-gold)' : 'none'}" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>
                                     </button>
+                                    <button class="profile-circle" title="Recite & Analyze" onclick="window.app.openRecordingModal(${id}, ${ayah.numberInSurah})">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="22"></line></svg>
+                                    </button>
                                     <button class="profile-circle" onclick="window.app.playAyahAudio(${id}, ${ayah.numberInSurah})">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                                     </button>
@@ -6649,6 +6659,141 @@ async function shareContent(title, text) {
         const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(shareData.text)}`;
         window.open(whatsappUrl, '_blank');
     }
+}
+
+// --- Recitation Intelligence Engine UI ---
+async function openRecordingModal(surahId, ayahNum) {
+    state.recording.currentAyah = { surahId, ayahNum };
+    document.getElementById('recording-overlay').style.display = 'flex';
+    document.getElementById('recording-quality').style.display = 'none';
+    document.getElementById('recording-timer').innerText = "00:00";
+    document.getElementById('recording-status').innerHTML = '<span id="recording-indicator" style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff4757; opacity: 0.3;"></span><span>Initializing...</span>';
+    
+    if (!window.RecitationIntelligenceEngine) {
+        alert("Audio engine failed to load. Please try again.");
+        return;
+    }
+    
+    if (!state.recording.engine) {
+        state.recording.engine = new RecitationIntelligenceEngine();
+        
+        state.recording.engine.onWaveformData = (dataArray, maxAmplitude) => {
+            drawRecordingWaveform(dataArray, maxAmplitude);
+        };
+        
+        state.recording.engine.onVADStateChange = (isSpeaking) => {
+            const ind = document.getElementById('recording-indicator');
+            if (ind) {
+                if (isSpeaking) {
+                    ind.style.background = '#2ed573'; // Green
+                    ind.style.opacity = '1';
+                } else {
+                    ind.style.background = '#ff4757'; // Red
+                    ind.style.opacity = '0.3';
+                }
+            }
+        };
+        
+        state.recording.engine.onClippingWarning = () => {
+            const canvas = document.getElementById('recording-waveform');
+            if (canvas) {
+                canvas.style.border = '2px solid #ff4757';
+                setTimeout(() => canvas.style.border = 'none', 300);
+            }
+        };
+    }
+    
+    try {
+        await state.recording.engine.init();
+        startRecording();
+    } catch (e) {
+        document.getElementById('recording-status').innerText = "Microphone access denied or unavailable.";
+    }
+}
+
+function closeRecordingModal() {
+    if (state.recording.engine && state.recording.engine.isRecording) {
+        state.recording.engine.stop();
+    }
+    if (state.recording.timer) clearInterval(state.recording.timer);
+    document.getElementById('recording-overlay').style.display = 'none';
+}
+
+function startRecording() {
+    state.recording.engine.start();
+    state.recording.seconds = 0;
+    document.getElementById('recording-status').innerHTML = '<span id="recording-indicator" style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff4757; opacity: 0.3;"></span><span>Listening...</span>';
+    
+    if (state.recording.timer) clearInterval(state.recording.timer);
+    state.recording.timer = setInterval(() => {
+        state.recording.seconds++;
+        const m = String(Math.floor(state.recording.seconds / 60)).padStart(2, '0');
+        const s = String(state.recording.seconds % 60).padStart(2, '0');
+        document.getElementById('recording-timer').innerText = `${m}:${s}`;
+    }, 1000);
+}
+
+async function stopRecording() {
+    if (!state.recording.engine || !state.recording.engine.isRecording) return;
+    
+    clearInterval(state.recording.timer);
+    document.getElementById('recording-status').innerHTML = '<span>Processing & Enhancing...</span>';
+    document.getElementById('btn-record-stop').style.display = 'none';
+    
+    const result = await state.recording.engine.stop();
+    
+    if (result.error) {
+        alert("Recording Error: " + result.error);
+        closeRecordingModal();
+        document.getElementById('btn-record-stop').style.display = 'block';
+        return;
+    }
+    
+    const qDiv = document.getElementById('recording-quality');
+    const qVal = document.getElementById('recording-quality-value');
+    qDiv.style.display = 'block';
+    qVal.innerText = result.quality.grade;
+    
+    let color = '#2ed573';
+    if (result.quality.grade === 'Poor') color = '#ff4757';
+    if (result.quality.grade === 'Fair') color = '#ffa502';
+    qVal.style.color = color;
+    
+    document.getElementById('recording-status').innerHTML = `<span>Quality Analysis Complete</span>`;
+    
+    setTimeout(() => {
+        alert("Mock Response: The enhanced audio (" + (result.blob.size / 1024).toFixed(1) + " KB, " + result.quality.duration + "s) has been processed and passed validation!\n\nSpeech Recognition Engine is not currently integrated.");
+        closeRecordingModal();
+        document.getElementById('btn-record-stop').style.display = 'block';
+    }, 1500);
+}
+
+function drawRecordingWaveform(dataArray, maxAmplitude) {
+    const canvas = document.getElementById('recording-waveform');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = maxAmplitude > 0.8 ? '#ff4757' : 'var(--accent-gold)';
+    
+    ctx.beginPath();
+    const sliceWidth = canvas.width / dataArray.length;
+    let x = 0;
+    
+    for (let i = 0; i < dataArray.length; i++) {
+        const v = dataArray[i] / 128.0;
+        const y = v * (canvas.height / 2);
+        
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+        
+        x += sliceWidth;
+    }
+    
+    ctx.lineTo(canvas.width, canvas.height / 2);
+    ctx.stroke();
 }
 
 
