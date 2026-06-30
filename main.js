@@ -6670,50 +6670,68 @@ async function shareContent(title, text) {
 // --- Recitation Intelligence Engine UI ---
 async function openRecordingModal(surahId, ayahNum) {
     state.recording.currentAyah = { surahId, ayahNum };
+
+    // Always reset to recording view when opening
     document.getElementById('recording-overlay').style.display = 'block';
-    document.getElementById('recording-quality').style.display = 'none';
-    document.getElementById('recording-timer').innerText = "00:00";
+    document.getElementById('recording-view').style.display = 'block';
+    document.getElementById('recording-results').style.display = 'none';
+    document.getElementById('recording-timer').innerText = '00:00';
     document.getElementById('recording-status').innerText = 'Initializing...';
-    
+    const ind = document.getElementById('recording-indicator');
+    if (ind) { ind.style.background = '#ff4757'; ind.style.opacity = '0.4'; }
+
+    // Clear canvas
+    const canvas = document.getElementById('recording-waveform');
+    if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
     if (!window.RecitationIntelligenceEngine) {
-        alert("Audio engine failed to load. Please try again.");
+        document.getElementById('recording-status').innerText = 'Engine failed to load.';
         return;
     }
-    
+
     if (!state.recording.engine) {
         state.recording.engine = new RecitationIntelligenceEngine();
-        
+
         state.recording.engine.onWaveformData = (dataArray, maxAmplitude) => {
             drawRecordingWaveform(dataArray, maxAmplitude);
         };
-        
+
         state.recording.engine.onVADStateChange = (isSpeaking) => {
             const ind = document.getElementById('recording-indicator');
             if (ind) {
                 if (isSpeaking) {
-                    ind.style.background = '#2ed573'; // Green
+                    ind.style.background = '#2ed573';
                     ind.style.opacity = '1';
+                    ind.style.boxShadow = '0 0 6px #2ed573';
                 } else {
-                    ind.style.background = '#ff4757'; // Red
-                    ind.style.opacity = '0.3';
+                    ind.style.background = '#ff4757';
+                    ind.style.opacity = '0.4';
+                    ind.style.boxShadow = 'none';
                 }
             }
         };
-        
+
         state.recording.engine.onClippingWarning = () => {
             const canvas = document.getElementById('recording-waveform');
             if (canvas) {
-                canvas.style.border = '2px solid #ff4757';
-                setTimeout(() => canvas.style.border = 'none', 300);
+                canvas.style.outline = '2px solid #ff4757';
+                setTimeout(() => canvas.style.outline = 'none', 400);
             }
         };
     }
-    
+
     try {
         await state.recording.engine.init();
         startRecording();
     } catch (e) {
-        document.getElementById('recording-status').innerText = "Microphone access denied or unavailable.";
+        console.error('Mic init error:', e);
+        document.getElementById('recording-status').innerText =
+            e.name === 'NotAllowedError'
+            ? 'Mic permission denied.'
+            : 'Microphone unavailable.';
     }
 }
 
@@ -6803,27 +6821,40 @@ function drawRecordingWaveform(dataArray, maxAmplitude) {
     const canvas = document.getElementById('recording-waveform');
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = maxAmplitude > 0.8 ? '#ff4757' : 'var(--accent-gold)';
-    
+    const W = canvas.width;
+    const H = canvas.height;
+    const mid = H / 2;
+
+    ctx.clearRect(0, 0, W, H);
+
+    // Draw center line
+    ctx.strokeStyle = 'rgba(128,128,128,0.2)';
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    const sliceWidth = canvas.width / dataArray.length;
+    ctx.moveTo(0, mid);
+    ctx.lineTo(W, mid);
+    ctx.stroke();
+
+    // Draw waveform with gradient color based on amplitude
+    const isClipping = maxAmplitude > 0.85;
+    const isSpeaking = maxAmplitude > 0.04;
+    ctx.strokeStyle = isClipping ? '#ff4757' : isSpeaking ? '#2ed573' : 'rgba(150,150,150,0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+
+    ctx.beginPath();
+    const sliceWidth = W / dataArray.length;
     let x = 0;
-    
+
     for (let i = 0; i < dataArray.length; i++) {
         const v = dataArray[i] / 128.0;
-        const y = v * (canvas.height / 2);
-        
+        const y = mid + (v - 1.0) * mid;
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
-        
         x += sliceWidth;
     }
-    
-    ctx.lineTo(canvas.width, canvas.height / 2);
+    ctx.lineTo(W, mid);
     ctx.stroke();
 }
 
