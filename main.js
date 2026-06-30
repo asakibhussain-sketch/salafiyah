@@ -615,7 +615,13 @@ window.app = {
         if (window.prayerEngine) window.prayerEngine.refresh(force);
         else fetchPrayerTimes();
     },
-    forceLocationRefresh: () => detectLocation()
+    forceLocationRefresh: () => detectLocation(),
+
+    // Recitation Intelligence Engine
+    openRecordingModal: (surahId, ayahNum) => openRecordingModal(surahId, ayahNum),
+    closeRecordingModal: () => closeRecordingModal(),
+    startRecording: () => startRecording(),
+    stopRecording: () => stopRecording()
 };
 
 const adhkarData = {
@@ -6716,7 +6722,11 @@ function closeRecordingModal() {
         state.recording.engine.stop();
     }
     if (state.recording.timer) clearInterval(state.recording.timer);
+    state.recording.engine = null; // Reset so it reinitializes next time
     document.getElementById('recording-overlay').style.display = 'none';
+    // Re-show the stop button in case it was hidden
+    const stopBtn = document.getElementById('btn-record-stop');
+    if (stopBtn) stopBtn.style.display = 'block';
 }
 
 function startRecording() {
