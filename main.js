@@ -6684,8 +6684,17 @@ async function openRecordingModal(surahId, ayahNum) {
         
         const arDiv = activeCard.querySelector('.arabic-text');
         if (arDiv) {
+            // Save original HTML to restore later
+            state.recording.originalArabicHTML = arDiv.innerHTML;
+            
             // Get raw text without tajweed HTML spans
-            state.recording.expectedText = arDiv.textContent.trim().replace(/\s+/g, ' ');
+            const rawText = arDiv.textContent.trim().replace(/\s+/g, ' ');
+            state.recording.expectedText = rawText;
+            
+            // Rebuild with word spans for highlighting
+            const words = rawText.split(' ');
+            state.recording.expectedWords = words;
+            arDiv.innerHTML = words.map((w, i) => `<span id="rec-word-${i}" class="recitation-word">${w}</span>`).join(' ');
         }
     }
 
@@ -6773,7 +6782,17 @@ function closeRecordingModal() {
     const ind = document.getElementById('recording-indicator');
     if (ind) { ind.style.background = '#ff4757'; ind.style.opacity = '0.4'; }
     
-    // Remove Ayah highlight
+    // Remove Ayah highlight and restore original HTML
+    if (state.recording.currentAyah) {
+        const activeCard = document.getElementById(`ayah-${state.recording.currentAyah.ayahNum}`);
+        if (activeCard) {
+            activeCard.classList.remove('active-recording');
+            const arDiv = activeCard.querySelector('.arabic-text');
+            if (arDiv && state.recording.originalArabicHTML) {
+                arDiv.innerHTML = state.recording.originalArabicHTML;
+            }
+        }
+    }
     const allCards = document.querySelectorAll('.ayah-card');
     allCards.forEach(c => c.classList.remove('active-recording'));
 }
@@ -6794,13 +6813,34 @@ function startRecording() {
         
         state.recording.speechRecognizer.onresult = (event) => {
             let finalTranscript = '';
+            let interimTranscript = '';
             for (let i = event.resultIndex; i < event.results.length; ++i) {
                 if (event.results[i].isFinal) {
-                    finalTranscript += event.results[i][0].transcript;
+                    finalTranscript += event.results[i][0].transcript + ' ';
+                } else {
+                    interimTranscript += event.results[i][0].transcript + ' ';
                 }
             }
+            
             if (finalTranscript) {
-                state.recording.speechTranscript += finalTranscript + ' ';
+                state.recording.speechTranscript += finalTranscript;
+            }
+            
+            // Live Highlight logic
+            const currentTotalTranscript = state.recording.speechTranscript + interimTranscript;
+            const normalize = (s) => s.replace(/[\u064B-\u065F\u0670\u06D6-\u06ED]/g, '') // strip diacritics
+                                      .replace(/[^\u0600-\u06FF ]/g, '') // keep only arabic and spaces
+                                      .split(/\s+/).filter(w => w.length > 0);
+            
+            const spokenWords = new Set(normalize(currentTotalTranscript));
+            if (state.recording.expectedWords) {
+                state.recording.expectedWords.forEach((word, idx) => {
+                    const normWord = normalize(word)[0];
+                    if (normWord && spokenWords.has(normWord)) {
+                        const span = document.getElementById(`rec-word-${idx}`);
+                        if (span) span.classList.add('spoken-word');
+                    }
+                });
             }
         };
         

@@ -3402,6 +3402,17 @@ body.immersive-mode header {
     transition: all 0.3s ease;
 }
 
+.recitation-word {
+    transition: color 0.2s, background 0.2s;
+    border-radius: 4px;
+    padding: 0 2px;
+}
+
+.spoken-word {
+    color: #2ed573 !important;
+    background: rgba(46, 213, 115, 0.15);
+}
+
 #recording-overlay {
     animation: slideInPanel 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
