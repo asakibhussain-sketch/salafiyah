@@ -3395,6 +3395,13 @@ body.immersive-mode header {
 }
 
 /* ===== RECORDING INTELLIGENCE ENGINE ===== */
+.active-recording {
+    border: 2px solid var(--accent-gold) !important;
+    box-shadow: 0 0 15px rgba(234, 181, 67, 0.25) !important;
+    transform: scale(1.02) !important;
+    transition: all 0.3s ease;
+}
+
 #recording-overlay {
     animation: slideInPanel 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }

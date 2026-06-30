@@ -6670,6 +6670,24 @@ async function shareContent(title, text) {
 // --- Recitation Intelligence Engine UI ---
 async function openRecordingModal(surahId, ayahNum) {
     state.recording.currentAyah = { surahId, ayahNum };
+    state.recording.expectedText = '';
+    state.recording.speechTranscript = '';
+    
+    // Highlight active Ayah card and get expected text
+    const allCards = document.querySelectorAll('.ayah-card');
+    allCards.forEach(c => c.classList.remove('active-recording'));
+    const activeCard = document.getElementById(`ayah-${ayahNum}`);
+    if (activeCard) {
+        activeCard.classList.add('active-recording');
+        // Scroll slightly into view if needed
+        activeCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        
+        const arDiv = activeCard.querySelector('.arabic-text');
+        if (arDiv) {
+            // Get raw text without tajweed HTML spans
+            state.recording.expectedText = arDiv.textContent.trim().replace(/\s+/g, ' ');
+        }
+    }
 
     // Always reset to recording view when opening
     document.getElementById('recording-overlay').style.display = 'block';
@@ -6739,6 +6757,9 @@ function closeRecordingModal() {
     if (state.recording.engine && state.recording.engine.isRecording) {
         state.recording.engine.stop();
     }
+    if (state.recording.speechRecognizer) {
+        state.recording.speechRecognizer.stop();
+    }
     if (state.recording.timer) clearInterval(state.recording.timer);
     state.recording.engine = null;
     document.getElementById('recording-overlay').style.display = 'none';
@@ -6751,12 +6772,44 @@ function closeRecordingModal() {
     document.getElementById('btn-record-stop').style.opacity = '1';
     const ind = document.getElementById('recording-indicator');
     if (ind) { ind.style.background = '#ff4757'; ind.style.opacity = '0.4'; }
+    
+    // Remove Ayah highlight
+    const allCards = document.querySelectorAll('.ayah-card');
+    allCards.forEach(c => c.classList.remove('active-recording'));
 }
 
 function startRecording() {
     state.recording.engine.start();
     state.recording.seconds = 0;
     document.getElementById('recording-status').innerText = 'Listening...';
+    
+    // Start Speech Recognition
+    state.recording.speechTranscript = '';
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+        state.recording.speechRecognizer = new SpeechRecognition();
+        state.recording.speechRecognizer.lang = 'ar-SA';
+        state.recording.speechRecognizer.continuous = true;
+        state.recording.speechRecognizer.interimResults = true;
+        
+        state.recording.speechRecognizer.onresult = (event) => {
+            let finalTranscript = '';
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+                if (event.results[i].isFinal) {
+                    finalTranscript += event.results[i][0].transcript;
+                }
+            }
+            if (finalTranscript) {
+                state.recording.speechTranscript += finalTranscript + ' ';
+            }
+        };
+        
+        try {
+            state.recording.speechRecognizer.start();
+        } catch(e) {
+            console.error("Speech recognition start failed:", e);
+        }
+    }
     
     if (state.recording.timer) clearInterval(state.recording.timer);
     state.recording.timer = setInterval(() => {
@@ -6771,6 +6824,11 @@ async function stopRecording() {
     if (!state.recording.engine || !state.recording.engine.isRecording) return;
     
     clearInterval(state.recording.timer);
+    
+    if (state.recording.speechRecognizer) {
+        try { state.recording.speechRecognizer.stop(); } catch(e) {}
+    }
+
     document.getElementById('recording-status').innerText = 'Enhancing...';
     document.getElementById('btn-record-stop').disabled = true;
     document.getElementById('btn-record-stop').style.opacity = '0.5';
@@ -6792,11 +6850,37 @@ async function stopRecording() {
             : result.error;
         document.getElementById('result-duration').innerText = '\u2014';
         document.getElementById('result-size').innerText = '\u2014';
+        document.getElementById('result-accuracy').innerText = '\u2014';
         document.getElementById('btn-record-stop').disabled = false;
         document.getElementById('btn-record-stop').style.opacity = '1';
         return;
     }
     
+    // Calculate Pronunciation Accuracy
+    let accuracy = 0;
+    const expected = state.recording.expectedText || '';
+    const spoken = state.recording.speechTranscript || '';
+    
+    if (expected.length > 0 && spoken.length > 0) {
+        // Simple word-overlap check for prototype
+        const normalize = (s) => s.replace(/[\u064B-\u065F\u0670\u06D6-\u06ED]/g, '') // strip diacritics
+                                  .replace(/[^\u0600-\u06FF ]/g, '') // keep only arabic and spaces
+                                  .split(/\s+/).filter(w => w.length > 0);
+                                  
+        const expectedWords = normalize(expected);
+        const spokenWords = normalize(spoken);
+        
+        if (expectedWords.length > 0) {
+            let matches = 0;
+            // Count how many expected words were spoken (unordered, naive)
+            const spokenSet = new Set(spokenWords);
+            for (const w of expectedWords) {
+                if (spokenSet.has(w)) matches++;
+            }
+            accuracy = Math.round((matches / expectedWords.length) * 100);
+        }
+    }
+
     const { quality, blob } = result;
     const gradeConfig = {
         Excellent: { icon: '\u2705', color: '#2ed573', msg: 'Crystal clear! Audio enhanced and ready for recognition.' },
@@ -6806,12 +6890,24 @@ async function stopRecording() {
     };
     const cfg = gradeConfig[quality.grade] || gradeConfig.Good;
 
+    // Adjust message based on accuracy if speech recognition worked
+    let finalMsg = cfg.msg;
+    if (spoken.length > 0) {
+        if (accuracy > 80) finalMsg = 'Excellent pronunciation! ' + cfg.msg;
+        else if (accuracy > 50) finalMsg = 'Good attempt. Keep practicing! ' + cfg.msg;
+        else finalMsg = 'Pronunciation needs improvement. Try again slowly. ' + cfg.msg;
+    } else if (window.SpeechRecognition || window.webkitSpeechRecognition) {
+         finalMsg = 'Could not recognize speech clearly. ' + cfg.msg;
+    }
+
     document.getElementById('result-grade-icon').innerText = cfg.icon;
     document.getElementById('result-grade-label').innerText = quality.grade;
     document.getElementById('result-grade-label').style.color = cfg.color;
-    document.getElementById('result-message').innerText = cfg.msg;
+    document.getElementById('result-message').innerText = finalMsg;
     document.getElementById('result-duration').innerText = quality.duration + 's';
     document.getElementById('result-size').innerText = (blob.size / 1024).toFixed(0) + ' KB';
+    
+    document.getElementById('result-accuracy').innerText = spoken.length > 0 ? `${accuracy}%` : 'N/A';
     
     document.getElementById('btn-record-stop').disabled = false;
     document.getElementById('btn-record-stop').style.opacity = '1';
