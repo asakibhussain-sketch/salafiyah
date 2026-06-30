@@ -212,38 +212,68 @@
     </div>
     
     <!-- Recitation Intelligence Engine - Floating Side Panel -->
-    <div id="recording-overlay" style="display: none; position: fixed; bottom: 100px; right: 16px; z-index: 10000; width: 260px;">
-        <div class="glass-card" style="padding: 1rem 1.2rem; border-radius: 20px; position: relative; display: flex; flex-direction: column; gap: 0.6rem; box-shadow: 0 8px 32px rgba(0,0,0,0.25); border: 1px solid var(--glass-border);">
+    <div id="recording-overlay" style="display: none; position: fixed; bottom: 100px; right: 16px; z-index: 10000; width: 270px;">
+        <div class="glass-card" style="padding: 1rem 1.2rem; border-radius: 20px; position: relative; display: flex; flex-direction: column; gap: 0.7rem; box-shadow: 0 8px 32px rgba(0,0,0,0.3); border: 1px solid var(--glass-border);">
             
-            <!-- Header row -->
+            <!-- Header row (always visible) -->
             <div style="display: flex; align-items: center; justify-content: space-between;">
                 <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <span id="recording-indicator" style="display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #ff4757; opacity: 0.4; flex-shrink: 0;"></span>
-                    <span style="font-size: 0.75rem; font-weight: 700; color: var(--accent-gold); letter-spacing: 0.05em;">SALAFIYAH AI</span>
+                    <span id="recording-indicator" style="display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #ff4757; opacity: 0.4; flex-shrink: 0; transition: all 0.3s;"></span>
+                    <span style="font-size: 0.72rem; font-weight: 700; color: var(--accent-gold); letter-spacing: 0.06em;">SALAFIYAH AI</span>
                 </div>
-                <button onclick="window.app.closeRecordingModal()" style="background: none; border: none; cursor: pointer; padding: 2px; color: var(--text-muted); line-height: 1;">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                <button onclick="window.app.closeRecordingModal()" style="background: none; border: none; cursor: pointer; padding: 4px; color: var(--text-muted); line-height: 1; border-radius: 6px;">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
             </div>
 
-            <!-- Timer + Status -->
-            <div style="display: flex; align-items: center; justify-content: space-between;">
-                <div id="recording-timer" style="font-size: 1.6rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1;">00:00</div>
-                <div id="recording-status" style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); text-align: right;">Ready</div>
+            <!-- === RECORDING VIEW === -->
+            <div id="recording-view">
+                <!-- Timer + Status -->
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                    <div id="recording-timer" style="font-size: 1.7rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; color: var(--text-primary);">00:00</div>
+                    <div id="recording-status" style="font-size: 0.63rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); text-align: right; max-width: 90px; line-height: 1.3;">Ready</div>
+                </div>
+
+                <!-- Waveform Canvas -->
+                <canvas id="recording-waveform" width="230" height="44" style="width: 100%; height: 44px; border-radius: 10px; background: rgba(0,0,0,0.1); margin-bottom: 0.4rem;"></canvas>
+
+                <!-- Stop Button -->
+                <button id="btn-record-stop" onclick="window.app.stopRecording()" style="width: 100%; padding: 0.55rem 1rem; border-radius: 50px; background: #ff4757; color: white; border: none; cursor: pointer; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.04em; display: flex; align-items: center; justify-content: center; gap: 0.4rem;">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+                    Stop &amp; Analyze
+                </button>
             </div>
 
-            <!-- Waveform Canvas -->
-            <canvas id="recording-waveform" width="220" height="48" style="width: 100%; height: 48px; border-radius: 10px; background: rgba(0,0,0,0.12);"></canvas>
+            <!-- === RESULTS VIEW (hidden until done) === -->
+            <div id="recording-results" style="display: none; flex-direction: column; gap: 0.6rem;">
+                <!-- Grade badge -->
+                <div style="text-align: center;">
+                    <div id="result-grade-icon" style="font-size: 2rem; margin-bottom: 0.2rem;">✅</div>
+                    <div id="result-grade-label" style="font-size: 1rem; font-weight: 800; color: #2ed573;">Excellent</div>
+                    <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.15rem;">Recording Quality</div>
+                </div>
 
-            <!-- Quality Indicator -->
-            <div id="recording-quality" style="font-size: 0.75rem; padding: 0.25rem 0.6rem; border-radius: 8px; background: var(--glass-bg); display: none; text-align: center;">
-                Quality: <span id="recording-quality-value" style="font-weight: 700;">Excellent</span>
+                <!-- Stats row -->
+                <div style="display: flex; gap: 0.5rem;">
+                    <div style="flex: 1; background: var(--glass-bg); border-radius: 10px; padding: 0.5rem; text-align: center;">
+                        <div id="result-duration" style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary);">0s</div>
+                        <div style="font-size: 0.6rem; color: var(--text-muted); text-transform: uppercase;">Duration</div>
+                    </div>
+                    <div style="flex: 1; background: var(--glass-bg); border-radius: 10px; padding: 0.5rem; text-align: center;">
+                        <div id="result-size" style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary);">0 KB</div>
+                        <div style="font-size: 0.6rem; color: var(--text-muted); text-transform: uppercase;">Enhanced</div>
+                    </div>
+                </div>
+
+                <!-- Status message -->
+                <div id="result-message" style="font-size: 0.72rem; color: var(--text-secondary); text-align: center; line-height: 1.5; padding: 0.4rem 0.2rem;"></div>
+
+                <!-- Done button -->
+                <button onclick="window.app.closeRecordingModal()" style="width: 100%; padding: 0.55rem 1rem; border-radius: 50px; background: var(--accent-primary); color: white; border: none; cursor: pointer; font-size: 0.78rem; font-weight: 700;">
+                    Done
+                </button>
             </div>
 
-            <!-- Stop Button -->
-            <button id="btn-record-stop" onclick="window.app.stopRecording()" style="width: 100%; padding: 0.6rem 1rem; border-radius: 50px; background: #ff4757; color: white; border: none; cursor: pointer; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.05em;">
-                ⏹ Stop &amp; Analyze
-            </button>
         </div>
     </div>
 
