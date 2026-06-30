@@ -6670,10 +6670,10 @@ async function shareContent(title, text) {
 // --- Recitation Intelligence Engine UI ---
 async function openRecordingModal(surahId, ayahNum) {
     state.recording.currentAyah = { surahId, ayahNum };
-    document.getElementById('recording-overlay').style.display = 'flex';
+    document.getElementById('recording-overlay').style.display = 'block';
     document.getElementById('recording-quality').style.display = 'none';
     document.getElementById('recording-timer').innerText = "00:00";
-    document.getElementById('recording-status').innerHTML = '<span id="recording-indicator" style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff4757; opacity: 0.3;"></span><span>Initializing...</span>';
+    document.getElementById('recording-status').innerText = 'Initializing...';
     
     if (!window.RecitationIntelligenceEngine) {
         alert("Audio engine failed to load. Please try again.");
@@ -6732,7 +6732,7 @@ function closeRecordingModal() {
 function startRecording() {
     state.recording.engine.start();
     state.recording.seconds = 0;
-    document.getElementById('recording-status').innerHTML = '<span id="recording-indicator" style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff4757; opacity: 0.3;"></span><span>Listening...</span>';
+    document.getElementById('recording-status').innerText = 'Listening...';
     
     if (state.recording.timer) clearInterval(state.recording.timer);
     state.recording.timer = setInterval(() => {
@@ -6747,7 +6747,7 @@ async function stopRecording() {
     if (!state.recording.engine || !state.recording.engine.isRecording) return;
     
     clearInterval(state.recording.timer);
-    document.getElementById('recording-status').innerHTML = '<span>Processing & Enhancing...</span>';
+    document.getElementById('recording-status').innerText = 'Enhancing...';
     document.getElementById('btn-record-stop').style.display = 'none';
     
     const result = await state.recording.engine.stop();
@@ -6755,7 +6755,6 @@ async function stopRecording() {
     if (result.error) {
         alert("Recording Error: " + result.error);
         closeRecordingModal();
-        document.getElementById('btn-record-stop').style.display = 'block';
         return;
     }
     
@@ -6769,7 +6768,7 @@ async function stopRecording() {
     if (result.quality.grade === 'Fair') color = '#ffa502';
     qVal.style.color = color;
     
-    document.getElementById('recording-status').innerHTML = `<span>Quality Analysis Complete</span>`;
+    document.getElementById('recording-status').innerText = 'Analysis Complete';
     
     setTimeout(() => {
         alert("Mock Response: The enhanced audio (" + (result.blob.size / 1024).toFixed(1) + " KB, " + result.quality.duration + "s) has been processed and passed validation!\n\nSpeech Recognition Engine is not currently integrated.");
