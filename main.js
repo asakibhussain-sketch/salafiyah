@@ -6722,11 +6722,17 @@ function closeRecordingModal() {
         state.recording.engine.stop();
     }
     if (state.recording.timer) clearInterval(state.recording.timer);
-    state.recording.engine = null; // Reset so it reinitializes next time
+    state.recording.engine = null;
     document.getElementById('recording-overlay').style.display = 'none';
-    // Re-show the stop button in case it was hidden
-    const stopBtn = document.getElementById('btn-record-stop');
-    if (stopBtn) stopBtn.style.display = 'block';
+    // Reset views for next open
+    document.getElementById('recording-view').style.display = 'block';
+    document.getElementById('recording-results').style.display = 'none';
+    document.getElementById('recording-timer').innerText = '00:00';
+    document.getElementById('recording-status').innerText = 'Ready';
+    document.getElementById('btn-record-stop').disabled = false;
+    document.getElementById('btn-record-stop').style.opacity = '1';
+    const ind = document.getElementById('recording-indicator');
+    if (ind) { ind.style.background = '#ff4757'; ind.style.opacity = '0.4'; }
 }
 
 function startRecording() {
@@ -6748,33 +6754,49 @@ async function stopRecording() {
     
     clearInterval(state.recording.timer);
     document.getElementById('recording-status').innerText = 'Enhancing...';
-    document.getElementById('btn-record-stop').style.display = 'none';
+    document.getElementById('btn-record-stop').disabled = true;
+    document.getElementById('btn-record-stop').style.opacity = '0.5';
     
     const result = await state.recording.engine.stop();
     
+    // Switch from recording view to results view
+    document.getElementById('recording-view').style.display = 'none';
+    document.getElementById('recording-results').style.display = 'flex';
+
     if (result.error) {
-        alert("Recording Error: " + result.error);
-        closeRecordingModal();
+        document.getElementById('result-grade-icon').innerText = '\u274C';
+        document.getElementById('result-grade-label').innerText = 'Failed';
+        document.getElementById('result-grade-label').style.color = '#ff4757';
+        document.getElementById('result-message').innerText = result.error === 'Empty recording'
+            ? 'No audio detected. Please speak clearly into the microphone.'
+            : result.error === 'Only silence recorded'
+            ? 'Only silence was detected. Please recite louder.'
+            : result.error;
+        document.getElementById('result-duration').innerText = '\u2014';
+        document.getElementById('result-size').innerText = '\u2014';
+        document.getElementById('btn-record-stop').disabled = false;
+        document.getElementById('btn-record-stop').style.opacity = '1';
         return;
     }
     
-    const qDiv = document.getElementById('recording-quality');
-    const qVal = document.getElementById('recording-quality-value');
-    qDiv.style.display = 'block';
-    qVal.innerText = result.quality.grade;
+    const { quality, blob } = result;
+    const gradeConfig = {
+        Excellent: { icon: '\u2705', color: '#2ed573', msg: 'Crystal clear! Audio enhanced and ready for recognition.' },
+        Good:      { icon: '\uD83D\uDC4D', color: '#1e90ff', msg: 'Good quality. Minor noise removed and audio normalized.' },
+        Fair:      { icon: '\u26A0\uFE0F', color: '#ffa502', msg: 'Acceptable. Try a quieter environment for better results.' },
+        Poor:      { icon: '\u274C', color: '#ff4757', msg: 'Poor quality. Too much silence or clipping. Please re-record.' }
+    };
+    const cfg = gradeConfig[quality.grade] || gradeConfig.Good;
+
+    document.getElementById('result-grade-icon').innerText = cfg.icon;
+    document.getElementById('result-grade-label').innerText = quality.grade;
+    document.getElementById('result-grade-label').style.color = cfg.color;
+    document.getElementById('result-message').innerText = cfg.msg;
+    document.getElementById('result-duration').innerText = quality.duration + 's';
+    document.getElementById('result-size').innerText = (blob.size / 1024).toFixed(0) + ' KB';
     
-    let color = '#2ed573';
-    if (result.quality.grade === 'Poor') color = '#ff4757';
-    if (result.quality.grade === 'Fair') color = '#ffa502';
-    qVal.style.color = color;
-    
-    document.getElementById('recording-status').innerText = 'Analysis Complete';
-    
-    setTimeout(() => {
-        alert("Mock Response: The enhanced audio (" + (result.blob.size / 1024).toFixed(1) + " KB, " + result.quality.duration + "s) has been processed and passed validation!\n\nSpeech Recognition Engine is not currently integrated.");
-        closeRecordingModal();
-        document.getElementById('btn-record-stop').style.display = 'block';
-    }, 1500);
+    document.getElementById('btn-record-stop').disabled = false;
+    document.getElementById('btn-record-stop').style.opacity = '1';
 }
 
 function drawRecordingWaveform(dataArray, maxAmplitude) {
