@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -134,7 +134,7 @@ app.add_middleware(
 # --- Routes ---
 
 @app.post("/api/auth/request-otp")
-async def request_otp(req: AuthRequest):
+async def request_otp(req: AuthRequest, background_tasks: BackgroundTasks):
     # Check for recent OTP to prevent spam (60-second cooldown)
     res = execute_query(
         "SELECT expires_at FROM otps WHERE email = %s",
@@ -169,64 +169,74 @@ async def request_otp(req: AuthRequest):
         commit=True
     )
     
-    # Send OTP via Resend or Brevo
+    background_tasks.add_task(send_otp_email, req.email, code)
+    return {"status": "success", "message": "OTP sent"}
+
+
+async def send_otp_email(email: str, code: str):
+    """Send OTP email. Runs in background so it never blocks the API response."""
     resend_api_key = os.getenv("RESEND_API_KEY")
     brevo_api_key = os.getenv("BREVO_API_KEY")
-    
+
+    html_body = f"""
+    <div style="font-family: sans-serif; text-align: center; padding: 20px;">
+        <h2 style="color: #3b82f6;">Salafiyah Authentication</h2>
+        <p>Your one-time verification code is:</p>
+        <h1 style="font-size: 32px; letter-spacing: 5px; background: #f3f4f6; padding: 10px; border-radius: 8px;">{code}</h1>
+        <p style="color: #6b7280; font-size: 12px;">This code will expire in 5 minutes.</p>
+    </div>
+    """
+
     if brevo_api_key:
         try:
-            async with httpx.AsyncClient() as client:
-                await client.post(
+            async with httpx.AsyncClient(timeout=httpx.Timeout(8.0, connect=4.0)) as client:
+                resp = await client.post(
                     "https://api.brevo.com/v3/smtp/email",
-                    headers={
-                        "api-key": brevo_api_key,
-                        "Content-Type": "application/json"
-                    },
+                    headers={"api-key": brevo_api_key, "Content-Type": "application/json"},
                     json={
                         "sender": {"name": "Salafiyah", "email": "asakibhussain@gmail.com"},
-                        "to": [{"email": req.email}],
+                        "to": [{"email": email}],
                         "subject": "Your Salafiyah Verification Code",
-                        "htmlContent": f"""
-                        <div style="font-family: sans-serif; text-align: center; padding: 20px;">
-                            <h2 style="color: #3b82f6;">Salafiyah Authentication</h2>
-                            <p>Your one-time verification code is:</p>
-                            <h1 style="font-size: 32px; letter-spacing: 5px; background: #f3f4f6; padding: 10px; border-radius: 8px;">{code}</h1>
-                            <p style="color: #6b7280; font-size: 12px;">This code will expire in 5 minutes.</p>
-                        </div>
-                        """
+                        "htmlContent": html_body
                     }
                 )
+                if resp.status_code >= 400:
+                    print(f"Brevo API error {resp.status_code}: {resp.text}")
+                    print(f"CONSOLE OTP for {email}: {code}")
+                else:
+                    print(f"Brevo: OTP sent to {email}")
         except Exception as e:
-            print(f"Failed to send email via Brevo: {e}")
+            print(f"Brevo send failed ({type(e).__name__}): {e}")
+            print(f"CONSOLE OTP for {email}: {code}")
+
     elif resend_api_key:
         try:
-            async with httpx.AsyncClient() as client:
-                await client.post(
+            async with httpx.AsyncClient(timeout=httpx.Timeout(8.0, connect=4.0)) as client:
+                resp = await client.post(
                     "https://api.resend.com/emails",
                     headers={"Authorization": f"Bearer {resend_api_key}"},
                     json={
                         "from": "Salafiyah <onboarding@resend.dev>",
-                        "to": req.email,
+                        "to": email,
                         "subject": "Your Salafiyah Verification Code",
-                        "html": f"""
-                        <div style="font-family: sans-serif; text-align: center; padding: 20px;">
-                            <h2 style="color: #3b82f6;">Salafiyah Authentication</h2>
-                            <p>Your one-time verification code is:</p>
-                            <h1 style="font-size: 32px; letter-spacing: 5px; background: #f3f4f6; padding: 10px; border-radius: 8px;">{code}</h1>
-                            <p style="color: #6b7280; font-size: 12px;">This code will expire in 5 minutes.</p>
-                        </div>
-                        """
+                        "html": html_body
                     }
                 )
+                if resp.status_code >= 400:
+                    print(f"Resend API error {resp.status_code}: {resp.text}")
+                    print(f"CONSOLE OTP for {email}: {code}")
+                else:
+                    print(f"Resend: OTP sent to {email}")
         except Exception as e:
-            print(f"Failed to send email via Resend: {e}")
+            print(f"Resend send failed ({type(e).__name__}): {e}")
+            print(f"CONSOLE OTP for {email}: {code}")
+
     else:
         print("\n" + "="*40)
-        print(f"MOCK EMAIL (No API key found)")
-        print(f"TO: {req.email}\nCODE: {code}")
+        print(f"MOCK EMAIL (No API key configured)")
+        print(f"TO: {email}\nCODE: {code}")
         print("="*40 + "\n")
-    
-    return {"status": "success", "message": "OTP sent"}
+
 
 def verify_otp_internal(email: str, otp: str):
     res = execute_query(
