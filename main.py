@@ -202,42 +202,55 @@ async def health():
 
 @app.post("/api/auth/request-otp")
 async def request_otp(req: AuthRequest, background_tasks: BackgroundTasks):
-    # Check for recent OTP to prevent spam (60-second cooldown)
-    res = execute_query(
-        "SELECT expires_at FROM otps WHERE email = %s",
-        (req.email,),
-        fetch="one"
-    )
-    if res["result"]:
-        expires_at_str = res["result"][0]
-        try:
-            expires_at = datetime.fromisoformat(expires_at_str)
-            # If generated less than 60 seconds ago (expires in > 4 mins)
-            if (expires_at - datetime.utcnow()).total_seconds() > 240:
-                raise HTTPException(status_code=429, detail="Please wait 60 seconds before requesting another code")
-        except ValueError:
-            pass
+    import traceback
+    try:
+        # Check for recent OTP to prevent spam (60-second cooldown)
+        res = execute_query(
+            "SELECT expires_at FROM otps WHERE email = %s",
+            (req.email,),
+            fetch="one"
+        )
+        if res["result"]:
+            expires_at_str = res["result"][0]
+            try:
+                expires_at = datetime.fromisoformat(str(expires_at_str))
+                if (expires_at - datetime.utcnow()).total_seconds() > 240:
+                    raise HTTPException(status_code=429, detail="Please wait 60 seconds before requesting another code")
+            except ValueError:
+                pass
 
-    # Generate 6-digit OTP
-    code = f"{secrets.randbelow(1000000):06d}"
-    otp_hash = hashlib.sha256(code.encode()).hexdigest()
-    expires_at = datetime.utcnow() + timedelta(minutes=5)
-    
-    execute_query(
-        """
-        INSERT INTO otps (email, otp_hash, expires_at, attempts) 
-        VALUES (%s, %s, %s, 0)
-        ON CONFLICT(email) DO UPDATE SET 
-            otp_hash=excluded.otp_hash, 
-            expires_at=excluded.expires_at, 
-            attempts=0
-        """,
-        (req.email, otp_hash, expires_at.isoformat()),
-        commit=True
-    )
-    
-    background_tasks.add_task(send_otp_email, req.email, code)
-    return {"status": "success", "message": "OTP sent"}
+        # Generate 6-digit OTP
+        code = f"{secrets.randbelow(1000000):06d}"
+        otp_hash = hashlib.sha256(code.encode()).hexdigest()
+        expires_at = datetime.utcnow() + timedelta(minutes=5)
+
+        execute_query(
+            """
+            INSERT INTO otps (email, otp_hash, expires_at, attempts) 
+            VALUES (%s, %s, %s, 0)
+            ON CONFLICT(email) DO UPDATE SET 
+                otp_hash=excluded.otp_hash, 
+                expires_at=excluded.expires_at, 
+                attempts=0
+            """,
+            (req.email, otp_hash, expires_at.isoformat()),
+            commit=True
+        )
+
+        background_tasks.add_task(send_otp_email, req.email, code)
+        return {"status": "success", "message": "OTP sent"}
+
+    except HTTPException:
+        raise  # Let FastAPI handle 429, 400 etc. normally
+    except Exception as e:
+        tb = traceback.format_exc()
+        print(f"[request_otp ERROR] {type(e).__name__}: {e}\n{tb}")
+        # Return the real error so the browser shows it (helps debug)
+        raise HTTPException(
+            status_code=500,
+            detail=f"[{type(e).__name__}] {str(e)}"
+        )
+
 
 
 async def send_otp_email(email: str, code: str):
