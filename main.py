@@ -19,35 +19,58 @@ load_dotenv()
 
 # --- Database Setup ---
 # Vercel (and most serverless) has a read-only filesystem — only /tmp is writable.
-# Use /tmp for SQLite in production; fall back to local path in dev.
-IS_SERVERLESS = not os.path.exists(".env")  # .env only exists locally
+IS_SERVERLESS = not os.path.exists(".env")
 DB_PATH = "/tmp/salafiyah.db" if IS_SERVERLESS else "salafiyah.db"
-POSTGRES_URL = os.getenv("POSTGRES_URL") or os.getenv("DATABASE_URL")
-USE_POSTGRES = bool(POSTGRES_URL)
 
-if USE_POSTGRES:
+# Vercel Postgres (Neon) sets one of these env vars
+POSTGRES_URL = (
+    os.getenv("POSTGRES_URL_NON_POOLING") or  # direct connection, most reliable
+    os.getenv("POSTGRES_URL") or
+    os.getenv("DATABASE_URL")
+)
+USE_POSTGRES = False
+_pg_params = None  # Will hold parsed connection params
+
+def _parse_postgres_url(url):
+    """Parse a postgres:// or postgresql:// URL into psycopg2 kwargs.
+    Avoids passing the raw URI to psycopg2 which can fail on SSL/SNI with Neon."""
+    import urllib.parse
+    parsed = urllib.parse.urlparse(url)
+    params = {
+        "host":    parsed.hostname,
+        "port":    parsed.port or 5432,
+        "dbname":  (parsed.path or "/").lstrip("/"),
+        "user":    parsed.username,
+        "password": urllib.parse.unquote(parsed.password or ""),
+        "sslmode": "require",          # Neon always requires SSL
+        "connect_timeout": 8,
+    }
+    # Override sslmode if provided in query string
+    qs = urllib.parse.parse_qs(parsed.query)
+    if "sslmode" in qs:
+        params["sslmode"] = qs["sslmode"][0]
+    return params
+
+if POSTGRES_URL:
     try:
         import psycopg2
-        # Vercel Postgres (Neon) gives "postgres://" but psycopg2 needs "postgresql://"
-        if POSTGRES_URL.startswith("postgres://"):
-            POSTGRES_URL = POSTGRES_URL.replace("postgres://", "postgresql://", 1)
-        # Test the connection at startup; fall back to SQLite if it fails
-        _test_conn = psycopg2.connect(POSTGRES_URL)
-        _test_conn.close()
+        _pg_params = _parse_postgres_url(POSTGRES_URL)
+        _test = psycopg2.connect(**_pg_params)
+        _test.close()
+        USE_POSTGRES = True
+        print(f"Postgres connected OK (host={_pg_params['host']})")
     except ImportError:
-        print("Warning: psycopg2-binary not installed. Falling back to SQLite.")
-        USE_POSTGRES = False
+        print("psycopg2-binary not installed. Using SQLite.")
     except Exception as e:
-        print(f"Warning: Postgres connection failed ({e}). Falling back to SQLite.")
-        USE_POSTGRES = False
+        print(f"Postgres connection failed: {type(e).__name__}: {e}. Using SQLite.")
 
 def get_db_connection():
-    if USE_POSTGRES:
+    if USE_POSTGRES and _pg_params:
         try:
-            conn = psycopg2.connect(POSTGRES_URL)
+            conn = psycopg2.connect(**_pg_params)
             return conn, "postgres"
         except Exception as e:
-            print(f"Postgres connection error: {e}. Falling back to SQLite.")
+            print(f"Postgres runtime error: {e}. Falling back to SQLite.")
     conn = sqlite3.connect(DB_PATH)
     return conn, "sqlite"
 
