@@ -22,23 +22,34 @@ load_dotenv()
 # Use /tmp for SQLite in production; fall back to local path in dev.
 IS_SERVERLESS = not os.path.exists(".env")  # .env only exists locally
 DB_PATH = "/tmp/salafiyah.db" if IS_SERVERLESS else "salafiyah.db"
-POSTGRES_URL = os.getenv("POSTGRES_URL")
+POSTGRES_URL = os.getenv("POSTGRES_URL") or os.getenv("DATABASE_URL")
 USE_POSTGRES = bool(POSTGRES_URL)
 
 if USE_POSTGRES:
     try:
         import psycopg2
+        # Vercel Postgres (Neon) gives "postgres://" but psycopg2 needs "postgresql://"
+        if POSTGRES_URL.startswith("postgres://"):
+            POSTGRES_URL = POSTGRES_URL.replace("postgres://", "postgresql://", 1)
+        # Test the connection at startup; fall back to SQLite if it fails
+        _test_conn = psycopg2.connect(POSTGRES_URL)
+        _test_conn.close()
     except ImportError:
-        print("Warning: psycopg2-binary not installed but POSTGRES_URL is set. Falling back to SQLite.")
+        print("Warning: psycopg2-binary not installed. Falling back to SQLite.")
+        USE_POSTGRES = False
+    except Exception as e:
+        print(f"Warning: Postgres connection failed ({e}). Falling back to SQLite.")
         USE_POSTGRES = False
 
 def get_db_connection():
     if USE_POSTGRES:
-        conn = psycopg2.connect(POSTGRES_URL)
-        return conn, "postgres"
-    else:
-        conn = sqlite3.connect(DB_PATH)
-        return conn, "sqlite"
+        try:
+            conn = psycopg2.connect(POSTGRES_URL)
+            return conn, "postgres"
+        except Exception as e:
+            print(f"Postgres connection error: {e}. Falling back to SQLite.")
+    conn = sqlite3.connect(DB_PATH)
+    return conn, "sqlite"
 
 def execute_query(query, params=(), fetch=None, commit=False):
     conn, db_type = get_db_connection()
@@ -144,13 +155,15 @@ async def health():
     """Diagnostic endpoint to check deployment config."""
     db_writable = False
     try:
-        import tempfile, sqlite3 as sq
         test_path = "/tmp/_health_test.db"
+        import sqlite3 as sq
         sq.connect(test_path).close()
         os.remove(test_path)
         db_writable = True
     except Exception as e:
         db_writable = str(e)
+
+    pg_url_raw = os.getenv("POSTGRES_URL") or os.getenv("DATABASE_URL") or ""
     return {
         "status": "ok",
         "db_path": DB_PATH,
@@ -159,7 +172,10 @@ async def health():
         "is_serverless": IS_SERVERLESS,
         "has_brevo": bool(os.getenv("BREVO_API_KEY")),
         "has_resend": bool(os.getenv("RESEND_API_KEY")),
+        "postgres_url_scheme": pg_url_raw[:20] + "..." if pg_url_raw else "not set",
+        "postgres_connected": USE_POSTGRES,
     }
+
 
 @app.post("/api/auth/request-otp")
 async def request_otp(req: AuthRequest, background_tasks: BackgroundTasks):
