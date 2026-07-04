@@ -517,7 +517,7 @@ window.app = {
     resetTasbih: (...args) => resetTasbih(...args),
     resetAllData: (...args) => resetAllData(...args),
     loadSurah: (...args) => loadSurah(...args),
-    toggleAuth: (...args) => toggleAuth(...args),
+
     loadBook: (...args) => loadBook(...args),
     toggleTrackerTask: (...args) => toggleTrackerTask(...args),
     runCommand: (...args) => runCommand(...args),
@@ -911,7 +911,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initTheme();
     updateDate();
     initNav();
-    updateAuthUI();
+
     loadScreen('dashboard');
     checkStreak();
     checkDailyReset();
