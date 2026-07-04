@@ -5562,34 +5562,75 @@ function triggerAutoSync() {
 }
 
 function exportSyncKey() {
-    const data = JSON.stringify(state);
-    const key = btoa(data); // Simple base64 for key
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(key).then(() => {
-            alert("Sync Key copied to clipboard! Paste this on your other device to import.");
-        }).catch(() => {
-            // Clipboard write failed (e.g. no HTTPS) — fall back to prompt
-            prompt("Copy this Sync Key and paste it on your other device:", key);
-        });
-    } else {
-        // No clipboard API available
-        prompt("Copy this Sync Key and paste it on your other device:", key);
+    try {
+        // Unicode-safe base64 encoding (btoa alone breaks on Arabic/Unicode chars)
+        const data = JSON.stringify(state);
+        const key = btoa(unescape(encodeURIComponent(data)));
+
+        // Try clipboard first, fall back to file download
+        const tryClipboard = () => {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                return navigator.clipboard.writeText(key)
+                    .then(() => alert('Sync Key copied to clipboard! Paste it on your other device to import.'))
+                    .catch(downloadKey);
+            }
+            downloadKey();
+        };
+
+        const downloadKey = () => {
+            // Download as a .txt file — works everywhere, no permissions needed
+            const blob = new Blob([key], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'salafiyah-sync-key.txt';
+            a.click();
+            URL.revokeObjectURL(url);
+            alert('Sync Key downloaded as salafiyah-sync-key.txt — open it on your other device and use Import Key.');
+        };
+
+        tryClipboard();
+    } catch (e) {
+        alert('Export failed: ' + e.message);
     }
 }
 
 function importSyncKey() {
-    const key = prompt("Paste your Sync Key here:");
+    // Prefer file input for reliability; fallback to prompt
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.txt,text/plain';
+    input.onchange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => processImportKey(ev.target.result.trim());
+        reader.readAsText(file);
+    };
+
+    // Show options to user
+    const useFile = confirm('Import from file?\n\nOK = select the sync key .txt file\nCancel = paste the key as text');
+    if (useFile) {
+        input.click();
+    } else {
+        const key = prompt('Paste your Sync Key here:');
+        if (key) processImportKey(key.trim());
+    }
+}
+
+function processImportKey(key) {
     if (!key) return;
     try {
-        const data = JSON.parse(atob(key));
-        if (confirm("This will overwrite all current data. Continue?")) {
+        // Unicode-safe base64 decoding
+        const data = JSON.parse(decodeURIComponent(escape(atob(key))));
+        if (confirm('This will overwrite all current data. Continue?')) {
             Object.assign(state, data);
-            saveSettings(); // This triggers localStorage persistence
-            alert("Data imported successfully! App will now reload.");
+            saveSettings();
+            alert('Data imported successfully! App will now reload.');
             window.location.reload();
         }
     } catch (e) {
-        alert("Invalid Sync Key. Please check and try again.");
+        alert('Invalid Sync Key. Please check and try again.\n\nError: ' + e.message);
     }
 }
 
