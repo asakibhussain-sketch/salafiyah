@@ -518,8 +518,6 @@ window.app = {
     resetAllData: (...args) => resetAllData(...args),
     loadSurah: (...args) => loadSurah(...args),
     toggleAuth: (...args) => toggleAuth(...args),
-    renderAuthForm: (...args) => renderAuthForm(...args),
-    handleAuthSubmit: (...args) => handleAuthSubmit(...args),
     loadBook: (...args) => loadBook(...args),
     toggleTrackerTask: (...args) => toggleTrackerTask(...args),
     runCommand: (...args) => runCommand(...args),
@@ -5250,318 +5248,6 @@ function resetAllData() {
     }
 }
 
-// --- Auth Logic ---
-
-function toggleAuth() {
-    const modal = document.getElementById('auth-modal');
-    if (!modal) return;
-    if (state.user) {
-        if (confirm(`Logged in as ${state.user.email}. Sign out?`)) {
-            handleLogout();
-        }
-    } else {
-        const isVisible = modal.style.display === 'flex';
-        modal.style.display = isVisible ? 'none' : 'flex';
-        if (!isVisible) renderAuthForm('login');
-    }
-}
-
-function renderAuthForm(mode) {
-    const container = document.getElementById('auth-form-container');
-    const isLogin = mode === 'login';
-    const isSignup = mode === 'signup';
-    const isOTP = mode === 'signup-otp' || mode === 'forgot-otp';
-    const isForgot = mode === 'forgot';
-
-    let title = 'Welcome Back';
-    let sub = 'Sign in to sync your spiritual progress.';
-    if (isSignup) { title = 'Create Account'; sub = 'Join Salafiyah and track your daily journey.'; }
-    if (isOTP) { title = 'Verify Identity'; sub = 'We sent a verification code to your email.'; }
-    if (isForgot) { title = 'Reset Password'; sub = 'Enter your email to receive a reset code.'; }
-
-    container.innerHTML = `
-        <div class="auth-form" style="animation: entrance 0.4s ease-out both;">
-            <h2 style="color: var(--primary-blue); margin-bottom: 0.5rem;">${title}</h2>
-            <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 2rem;">${sub}</p>
-            
-            ${isOTP ? `
-                <div class="form-group" style="text-align: center;">
-                    <label style="margin-bottom: 0.8rem; display: block;">Enter 6-Digit OTP</label>
-                    <div id="otp-container" style="display: flex; gap: 0.4rem; justify-content: center;">
-                        ${[1,2,3,4,5,6].map(i => `
-                            <input type="text" class="otp-input" maxlength="1" style="width: 45px; height: 50px; text-align: center; font-size: 1.5rem; font-weight: 700; border-radius: 10px; background: rgba(0,0,0,0.05); border: 1px solid var(--glass-border); color: var(--text-primary); outline: none; transition: border-color 0.2s;">
-                        `).join('')}
-                    </div>
-                    <input type="hidden" id="auth-otp">
-                    <button id="resend-otp-btn" style="margin-top: 1rem; background: none; border: none; color: var(--primary-blue); cursor: pointer; font-size: 0.85rem; padding: 0.5rem; transition: opacity 0.3s;" onclick="window.app.handleResendOTP('${mode}')" disabled>Resend Code (60s)</button>
-                </div>
-                ${mode === 'forgot-otp' ? `
-                    <div class="form-group">
-                        <label>New Password</label>
-                        <input type="password" id="auth-new-pass" placeholder="••••••••" style="width: 100%; padding: 0.8rem; border-radius: 10px; background: rgba(0,0,0,0.05); border: 1px solid var(--glass-border); color: var(--text-primary); outline: none;">
-                    </div>
-                ` : ''}
-            ` : `
-                <div class="form-group">
-                    <label>Email Address</label>
-                    <input type="email" id="auth-email" placeholder="name@example.com" value="${window.tempAuthEmail || ''}" style="width: 100%; padding: 0.8rem; border-radius: 10px; background: rgba(0,0,0,0.05); border: 1px solid var(--glass-border); color: var(--text-primary); outline: none;">
-                </div>
-                ${!isForgot ? `
-                    <div class="form-group">
-                        <label>Password</label>
-                        <input type="password" id="auth-pass" placeholder="••••••••" style="width: 100%; padding: 0.8rem; border-radius: 10px; background: rgba(0,0,0,0.05); border: 1px solid var(--glass-border); color: var(--text-primary); outline: none;">
-                    </div>
-                ` : ''}
-            `}
-            
-            <button class="btn-primary" style="width: 100%; margin-top: 1rem;" onclick="window.app.handleAuthSubmit('${mode}')">
-                ${isLogin ? 'Sign In' : (isSignup || isForgot ? 'Send Code' : 'Verify & Continue')}
-            </button>
-            
-            <div class="auth-footer" style="margin-top: 1.5rem; font-size: 0.85rem; text-align: center; color: var(--text-secondary);">
-                ${isLogin ? `
-                    Don't have an account? <a onclick="window.app.renderAuthForm('signup')" style="color: var(--primary-blue); font-weight: 700; cursor: pointer;">Sign Up</a>
-                    <br><br>
-                    <a onclick="window.app.renderAuthForm('forgot')" style="color: var(--text-muted); cursor: pointer;">Forgot Password?</a>
-                ` : `
-                    Already have an account? <a onclick="window.app.renderAuthForm('login')" style="color: var(--primary-blue); font-weight: 700; cursor: pointer;">Sign In</a>
-                `}
-            </div>
-        </div>
-    `;
-    
-    if (isOTP) {
-        setupOTPInputs();
-        startResendTimer();
-    }
-}
-
-function setupOTPInputs() {
-    const inputs = document.querySelectorAll('.otp-input');
-    const hiddenInput = document.getElementById('auth-otp');
-    if (!inputs.length) return;
-    
-    inputs[0].focus();
-    
-    inputs.forEach((input, index) => {
-        input.addEventListener('input', (e) => {
-            if (e.target.value.length > 0) {
-                if (index < inputs.length - 1) inputs[index + 1].focus();
-            }
-            updateHiddenOTP();
-        });
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Backspace' && e.target.value === '' && index > 0) {
-                inputs[index - 1].focus();
-            }
-        });
-        input.addEventListener('paste', (e) => {
-            e.preventDefault();
-            const pastedData = e.clipboardData.getData('text').replace(/[^0-9]/g, '').slice(0, 6).split('');
-            inputs.forEach((inp, i) => {
-                inp.value = pastedData[i] || '';
-            });
-            updateHiddenOTP();
-            if (pastedData.length > 0) {
-                inputs[Math.min(pastedData.length, 5)].focus();
-            }
-        });
-    });
-
-    function updateHiddenOTP() {
-        hiddenInput.value = Array.from(inputs).map(i => i.value).join('');
-    }
-}
-
-let resendInterval;
-function startResendTimer() {
-    const btn = document.getElementById('resend-otp-btn');
-    if (!btn) return;
-    clearInterval(resendInterval);
-    let seconds = 60;
-    btn.disabled = true;
-    btn.style.opacity = '0.5';
-    btn.innerText = `Resend Code (${seconds}s)`;
-    
-    resendInterval = setInterval(() => {
-        seconds--;
-        if (seconds <= 0) {
-            clearInterval(resendInterval);
-            btn.disabled = false;
-            btn.style.opacity = '1';
-            btn.innerText = 'Resend Code';
-        } else {
-            btn.innerText = `Resend Code (${seconds}s)`;
-        }
-    }, 1000);
-}
-
-window.app.handleResendOTP = async function(mode) {
-    const btn = document.getElementById('resend-otp-btn');
-    if (btn.disabled) return;
-    const email = window.tempAuthEmail;
-    if (!email) return;
-    
-    btn.innerText = 'Sending...';
-    btn.disabled = true;
-    try {
-        const res = await fetch('/api/auth/request-otp', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email })
-        });
-        if (res.ok) {
-            startResendTimer();
-        } else {
-            const d = await res.json();
-            alert(d.detail || 'Failed to resend OTP.');
-            btn.disabled = false;
-            btn.innerText = 'Resend Code';
-            btn.style.opacity = '1';
-        }
-    } catch(e) {
-        alert('Request failed: ' + (e.message || e));
-        btn.disabled = false;
-        btn.innerText = 'Resend Code';
-        btn.style.opacity = '1';
-    }
-}
-
-async function handleAuthSubmit(mode) {
-    if (mode === 'signup' || mode === 'forgot') {
-        const email = document.getElementById('auth-email').value;
-        const pass = mode === 'signup' ? document.getElementById('auth-pass').value : null;
-        if (!email || (mode === 'signup' && !pass)) { alert('Please fill in all fields.'); return; }
-
-        window.tempAuthEmail = email;
-        window.tempAuthPass = pass;
-
-        try {
-            const res = await fetch('/api/auth/request-otp', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email })
-            });
-            if (res.ok) {
-                renderAuthForm(mode === 'signup' ? 'signup-otp' : 'forgot-otp');
-                alert("A verification code has been sent. Please check your email.");
-            } else {
-                let errMsg = `Server error (${res.status}). Please try again.`;
-                try { const d = await res.json(); errMsg = d.detail || errMsg; } catch(_) {}
-                alert(errMsg);
-            }
-        } catch (e) { alert('Request failed: ' + (e.message || e)); }
-        return;
-    }
-
-    const email = window.tempAuthEmail || document.getElementById('auth-email')?.value;
-    const otp = document.getElementById('auth-otp')?.value;
-    const pass = window.tempAuthPass || document.getElementById('auth-pass')?.value;
-    const newPass = document.getElementById('auth-new-pass')?.value;
-
-    if (mode === 'signup-otp' || mode === 'forgot-otp') {
-        if (!otp || otp.length !== 6) {
-            alert('Please enter the full 6-digit verification code.');
-            return;
-        }
-    }
-
-    let endpoint = '/api/auth/login';
-    let body = { email, password: pass };
-
-    if (mode === 'signup-otp') {
-        endpoint = '/api/auth/signup';
-        body = { email, password: pass, otp };
-    } else if (mode === 'forgot-otp') {
-        endpoint = '/api/auth/forgot-password';
-        body = { email, otp, new_password: newPass };
-    }
-
-    try {
-        const res = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-        });
-        const data = await res.json();
-
-        if (res.ok) {
-            if (mode === 'forgot-otp') {
-                alert("Password updated successfully! Please sign in.");
-                renderAuthForm('login');
-                return;
-            }
-
-            state.user = data.user || { email: data.email || email, id: data.user_id };
-            localStorage.setItem('user', JSON.stringify(state.user));
-
-            if (data.data) {
-                if (data.data.tracker) { state.tracker = data.data.tracker; localStorage.setItem('tracker_data', JSON.stringify(state.tracker)); }
-                if (data.data.tasbih_counts) { state.tasbih.counts = data.data.tasbih_counts; localStorage.setItem('tasbih_counts', JSON.stringify(state.tasbih.counts)); }
-                if (data.data.settings) {
-                    state.settings = { ...state.settings, ...data.data.settings };
-                    localStorage.setItem('app_settings', JSON.stringify(state.settings));
-                    if (typeof applyTheme === 'function' && state.settings.currentTheme) {
-                        applyTheme(state.settings.currentTheme, { persist: true });
-                    }
-                    if (typeof applyAppearanceSettings === 'function') {
-                        applyAppearanceSettings();
-                    }
-                }
-                if (data.data.bookmarks) { state.bookmarks = data.data.bookmarks; localStorage.setItem('bookmarks', JSON.stringify(state.bookmarks)); }
-                if (data.data.goals) { state.goals = data.data.goals; localStorage.setItem('goals', JSON.stringify(state.goals)); }
-                if (data.data.quiz) { state.quiz = data.data.quiz; }
-            }
-
-            updateAuthUI();
-            document.getElementById('auth-modal').style.display = 'none';
-            loadScreen(state.currentScreen);
-            alert(`${mode === 'login' ? 'Signed in' : 'Account created'} successfully!`);
-            if (mode === 'signup-otp') syncUserData();
-
-            // Clean up
-            delete window.tempAuthEmail;
-            delete window.tempAuthPass;
-        } else {
-            alert(data.detail || 'Authentication failed.');
-        }
-    } catch (e) {
-        alert('Network error. Is the server running?');
-    }
-}
-
-async function syncUserData() {
-    if (!state.user) return;
-    try {
-        const payload = {
-            email: state.user.email,
-            data: {
-                tracker: state.tracker,
-                tasbih_counts: state.tasbih.counts,
-                settings: state.settings,
-                bookmarks: state.bookmarks,
-                goals: state.goals,
-                quiz: state.quiz,
-                lastSync: new Date().toISOString()
-            }
-        };
-        await fetch('/api/user/sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        localStorage.setItem('last_cloud_sync', new Date().toLocaleTimeString());
-    } catch (e) {
-        console.warn("Sync failed", e);
-    }
-}
-
-let syncTimeout;
-function triggerAutoSync() {
-    clearTimeout(syncTimeout);
-    syncTimeout = setTimeout(() => syncUserData(), 2000); // 2s debounce
-}
-
 function exportSyncKey() {
     try {
         // Unicode-safe base64 encoding (btoa alone breaks on Arabic/Unicode chars)
@@ -5644,7 +5330,6 @@ function saveGoals() {
     state.goals.mushaf.target = Math.max(1, mushafTarget);
     state.goals.tasbih.target = Math.max(1, tasbihTarget);
     localStorage.setItem('goals', JSON.stringify(state.goals));
-    triggerAutoSync();
 
     // Flash confirmation on the Save Goals button
     const btn = document.querySelector('#goals-settings-section .btn-primary');
@@ -5657,31 +5342,7 @@ function saveGoals() {
 }
 
 
-async function handleLogout() {
-    if (state.user) {
-        // Try to sync any pending changes before logging out
-        try { await syncUserData(); } catch (e) { }
-    }
-    state.user = null;
-    localStorage.removeItem('user');
-    updateAuthUI();
-    loadScreen('dashboard');
-}
 
-
-
-
-function updateAuthUI() {
-    const profileBtn = document.getElementById('profile-btn');
-    if (!profileBtn) return;
-    if (state.user) {
-        profileBtn.classList.add('logged-in');
-        profileBtn.innerHTML = `<span>${state.user.email[0].toUpperCase()}</span>`;
-    } else {
-        profileBtn.classList.remove('logged-in');
-        profileBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>`;
-    }
-}
 
 
 
@@ -6388,7 +6049,6 @@ function toggleTrackerTask(id) {
     state.tracker.tasks[id] = !state.tracker.tasks[id];
     localStorage.setItem('tracker_data', JSON.stringify(state.tracker));
     if (state.currentScreen === 'tracker') renderTracker();
-    triggerAutoSync();
 }
 
 function initCommandPalette() {
@@ -6567,7 +6227,6 @@ function toggleBookmark(type, id, metadata) {
     // Specific triggers for Mushaf/Quran buttons
     const btn = document.getElementById(`bookmark-${type}-${id}`);
     if (btn) btn.classList.toggle('active');
-    triggerAutoSync();
 }
 
 function toggleVoiceRecognition() {
