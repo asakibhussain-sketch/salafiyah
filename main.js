@@ -576,6 +576,7 @@ window.app = {
     syncUserData: () => syncUserData(),
     exportSyncKey: () => exportSyncKey(),
     importSyncKey: () => importSyncKey(),
+    saveGoals: () => saveGoals(),
     applyBackground: () => applyBackground(),
     renderDuas: (...args) => renderDuas(...args),
     renderLanguages: (...args) => renderLanguages(...args),
@@ -4482,6 +4483,23 @@ async function renderSettings() {
             <button class="btn-primary" onclick="window.app.saveLocation()">${t('update_location')}</button>
         </div>
 
+        <div class="glass-card" id="goals-settings-section">
+            <h3 class="section-title">Daily Spiritual Goals</h3>
+            <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 1.5rem;">Set your daily targets for Mushaf pages and Tasbih count.</p>
+
+            <div class="form-group">
+                <label>Mushaf Pages Target (daily)</label>
+                <input type="number" id="set-mushaf-target" min="1" max="604" value="${state.goals.mushaf.target}" style="width: 100%; padding: 0.8rem; border-radius: 10px; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); color: var(--text-primary); outline: none; font-size: 1rem;">
+            </div>
+
+            <div class="form-group">
+                <label>Tasbih Count Target (daily)</label>
+                <input type="number" id="set-tasbih-target" min="1" max="100000" value="${state.goals.tasbih.target}" style="width: 100%; padding: 0.8rem; border-radius: 10px; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); color: var(--text-primary); outline: none; font-size: 1rem;">
+            </div>
+
+            <button class="btn-primary" style="width: 100%; margin-top: 0.5rem;" onclick="window.app.saveGoals()">Save Goals</button>
+        </div>
+
         <div class="glass-card">
             <h3 class="section-title">Hijri Calendar Settings</h3>
             
@@ -5546,9 +5564,17 @@ function triggerAutoSync() {
 function exportSyncKey() {
     const data = JSON.stringify(state);
     const key = btoa(data); // Simple base64 for key
-    navigator.clipboard.writeText(key).then(() => {
-        alert("Sync Key copied to clipboard! Paste this on your other device to import.");
-    });
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(key).then(() => {
+            alert("Sync Key copied to clipboard! Paste this on your other device to import.");
+        }).catch(() => {
+            // Clipboard write failed (e.g. no HTTPS) — fall back to prompt
+            prompt("Copy this Sync Key and paste it on your other device:", key);
+        });
+    } else {
+        // No clipboard API available
+        prompt("Copy this Sync Key and paste it on your other device:", key);
+    }
 }
 
 function importSyncKey() {
@@ -5566,6 +5592,28 @@ function importSyncKey() {
         alert("Invalid Sync Key. Please check and try again.");
     }
 }
+
+function saveGoals() {
+    const mushafInput = document.getElementById('set-mushaf-target');
+    const tasbihInput = document.getElementById('set-tasbih-target');
+    const mushafTarget = parseInt(mushafInput?.value) || state.goals.mushaf.target;
+    const tasbihTarget = parseInt(tasbihInput?.value) || state.goals.tasbih.target;
+
+    state.goals.mushaf.target = Math.max(1, mushafTarget);
+    state.goals.tasbih.target = Math.max(1, tasbihTarget);
+    localStorage.setItem('goals', JSON.stringify(state.goals));
+    triggerAutoSync();
+
+    // Flash confirmation on the Save Goals button
+    const btn = document.querySelector('#goals-settings-section .btn-primary');
+    if (btn) {
+        const orig = btn.textContent;
+        btn.textContent = '✓ Goals Saved!';
+        btn.style.background = 'var(--accent-emerald, #10b981)';
+        setTimeout(() => { btn.textContent = orig; btn.style.background = ''; }, 1800);
+    }
+}
+
 
 async function handleLogout() {
     if (state.user) {

@@ -1,18 +1,23 @@
 // ─── Cache version: bump this string on EVERY deploy ─────────────────────────
 // Using a timestamp so it's always unique on save.
-const CACHE_VERSION = 'salafiyah-v20260628_9';
+const CACHE_VERSION = 'salafiyah-v20260704_1';
 const API_CACHE_NAME = 'salafiyah-api-v2';
 
 // Core app shell — these are fetched & cached on install
 const SHELL_ASSETS = [
     '/',
     '/index.html',
+    '/audio-engine.js',
     '/main.js',
     '/prayer-engine.js',
     '/style.css',
     '/theme-system.js',
     '/manifest.json',
     '/icon.png',
+    '/hero_mosque_night_1777635162540.png',
+    '/quote_lantern_soft_1777635193799.png',
+    '/spiritual_night_bg_1777640765146.png',
+    '/madani_blessings.json',
     '/sahih_muslim_books.json',
 ];
 

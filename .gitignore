@@ -25,6 +25,7 @@ Thumbs.db
 
 # Test & Browser artifacts
 test-results/
+*.log
 
 # Temporary / Scratch scripts containing hardcoded credentials
 scratch/
