@@ -18,7 +18,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- Database Setup ---
-DB_PATH = "salafiyah.db"
+# Vercel (and most serverless) has a read-only filesystem — only /tmp is writable.
+# Use /tmp for SQLite in production; fall back to local path in dev.
+IS_SERVERLESS = not os.path.exists(".env")  # .env only exists locally
+DB_PATH = "/tmp/salafiyah.db" if IS_SERVERLESS else "salafiyah.db"
 POSTGRES_URL = os.getenv("POSTGRES_URL")
 USE_POSTGRES = bool(POSTGRES_URL)
 
@@ -100,7 +103,10 @@ def init_db():
     conn.commit()
     conn.close()
 
-init_db()
+try:
+    init_db()
+except Exception as e:
+    print(f"WARNING: init_db() failed: {e}")
 
 # --- Models ---
 class AuthRequest(BaseModel):
@@ -132,6 +138,28 @@ app.add_middleware(
 )
 
 # --- Routes ---
+
+@app.get("/api/health")
+async def health():
+    """Diagnostic endpoint to check deployment config."""
+    db_writable = False
+    try:
+        import tempfile, sqlite3 as sq
+        test_path = "/tmp/_health_test.db"
+        sq.connect(test_path).close()
+        os.remove(test_path)
+        db_writable = True
+    except Exception as e:
+        db_writable = str(e)
+    return {
+        "status": "ok",
+        "db_path": DB_PATH,
+        "db_type": "postgres" if USE_POSTGRES else "sqlite",
+        "tmp_writable": db_writable,
+        "is_serverless": IS_SERVERLESS,
+        "has_brevo": bool(os.getenv("BREVO_API_KEY")),
+        "has_resend": bool(os.getenv("RESEND_API_KEY")),
+    }
 
 @app.post("/api/auth/request-otp")
 async def request_otp(req: AuthRequest, background_tasks: BackgroundTasks):

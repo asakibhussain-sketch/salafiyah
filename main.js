@@ -5420,7 +5420,7 @@ window.app.handleResendOTP = async function(mode) {
             btn.style.opacity = '1';
         }
     } catch(e) {
-        alert('Network error.');
+        alert('Request failed: ' + (e.message || e));
         btn.disabled = false;
         btn.innerText = 'Resend Code';
         btn.style.opacity = '1';
@@ -5444,12 +5444,13 @@ async function handleAuthSubmit(mode) {
             });
             if (res.ok) {
                 renderAuthForm(mode === 'signup' ? 'signup-otp' : 'forgot-otp');
-                alert("A verification code has been sent. Please check your email (and server console).");
+                alert("A verification code has been sent. Please check your email.");
             } else {
-                const d = await res.json();
-                alert(d.detail || 'Failed to send OTP.');
+                let errMsg = `Server error (${res.status}). Please try again.`;
+                try { const d = await res.json(); errMsg = d.detail || errMsg; } catch(_) {}
+                alert(errMsg);
             }
-        } catch (e) { alert('Network error.'); }
+        } catch (e) { alert('Request failed: ' + (e.message || e)); }
         return;
     }
 
