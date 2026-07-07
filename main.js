@@ -178,7 +178,11 @@ const getInitialState = () => {
             });
             return hj;
         } catch (e) {
-                const sm = window.settingsManager ? window.settingsManager.getAll() : {};
+            return { day: '1', month: { en: 'Ramadan' }, year: '1447' };
+        }
+    })();
+
+    const sm = window.settingsManager ? window.settingsManager.getAll() : {};
     const app = sm.appearance || {};
     const quran = sm.quran || {};
     const prayer = sm.prayer || {};
