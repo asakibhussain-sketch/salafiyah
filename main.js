@@ -4421,10 +4421,7 @@ async function renderSettings() {
         </button>
     `).join('');
 
-    const animationIntensity = state.settings.animationIntensity ?? 1;
-    const blurIntensity = state.settings.blurIntensity ?? 20;
-    const cardRadius = state.settings.cardRadius ?? 28;
-    const fontScale = state.settings.fontScale ?? 1;
+
 
     contentArea.innerHTML = `
         <div style="animation: entrance 0.6s var(--anim-spring) both;">
@@ -4569,78 +4566,7 @@ async function renderSettings() {
                 ${themePreviewCards}
             </div>
 
-            <div class="appearance-grid" style="margin-bottom: 1rem;">
-                <label class="premium-toggle">
-                    <div>
-                        <h4>Dynamic Prayer Mode</h4>
-                        <p>Fajr, Dhuhr, Asr, Maghrib, and Isha each receive a matching atmosphere.</p>
-                    </div>
-                    <input type="checkbox" id="set-dynamic-prayer" ${state.settings.dynamicPrayerTheme ? 'checked' : ''} onchange="window.app.setDynamicPrayerTheme(this.checked)">
-                </label>
 
-                <label class="premium-toggle">
-                    <div>
-                        <h4>Immersive Mode</h4>
-                        <p>Softens persistent chrome so reading and reflection feel calmer.</p>
-                    </div>
-                    <input type="checkbox" id="set-immersive" ${state.settings.immersiveMode ? 'checked' : ''} onchange="window.app.setImmersiveMode(this.checked)">
-                </label>
-
-                <label class="premium-toggle">
-                    <div>
-                        <h4>Ambient Background</h4>
-                        <p>Floating glow layers tuned per theme with very low paint cost.</p>
-                    </div>
-                    <input type="checkbox" id="set-ambient" ${state.settings.ambientEnabled !== false ? 'checked' : ''} onchange="window.app.setAmbientEnabled(this.checked)">
-                </label>
-
-                <label class="premium-toggle">
-                    <div>
-                        <h4>Islamic Pattern Layer</h4>
-                        <p>Subtle geometric texture for pages and dashboard surfaces.</p>
-                    </div>
-                    <input type="checkbox" id="set-pattern" ${state.settings.patternEnabled !== false ? 'checked' : ''} onchange="window.app.setPatternEnabled(this.checked)">
-                </label>
-            </div>
-
-            <div class="appearance-grid" style="margin-bottom: 1rem;">
-                <div class="range-control">
-                    <h4>Animation Intensity</h4>
-                    <p>Controls page transitions, reveals, hover lift, and feedback motion.</p>
-                    <input type="range" id="set-anim-intensity" min="0" max="1" step="0.05" value="${animationIntensity}" oninput="window.app.setAnimationIntensity(this.value)">
-                    <div class="range-value">${Math.round(animationIntensity * 100)}%</div>
-                </div>
-
-                <div class="range-control">
-                    <h4>Blur Intensity</h4>
-                    <p>Adjusts glass cards, header, sidebar, and floating actions.</p>
-                    <input type="range" id="set-blur" min="0" max="40" step="2" value="${blurIntensity}" oninput="window.app.setBlurIntensity(this.value)">
-                    <div class="range-value">${blurIntensity}px</div>
-                </div>
-
-                <div class="range-control">
-                    <h4>Card Radius</h4>
-                    <p>Fine-tune modern softness without changing layout structure.</p>
-                    <input type="range" id="set-card-radius" min="12" max="40" step="2" value="${cardRadius}" oninput="window.app.setCardRadius(this.value)">
-                    <div class="range-value">${cardRadius}px</div>
-                </div>
-
-                <div class="range-control">
-                    <h4>Font Scale</h4>
-                    <p>Improves readability globally while preserving responsive spacing.</p>
-                    <input type="range" id="set-font-scale" min="0.92" max="1.14" step="0.01" value="${fontScale}" oninput="window.app.setFontScale(this.value)">
-                    <div class="range-value">${Math.round(fontScale * 100)}%</div>
-                </div>
-            </div>
-
-            <div class="density-group">
-                ${['compact', 'regular', 'spacious'].map(density => `
-                    <button type="button" class="density-option ${state.settings.uiDensity === density ? 'active' : ''}" onclick="window.app.setDensity('${density}')">
-                        <h4>${density.charAt(0).toUpperCase() + density.slice(1)}</h4>
-                        <p>${density === 'compact' ? 'Dense dashboard for phones.' : density === 'spacious' ? 'Airier reading and tablet spacing.' : 'Balanced default spacing.'}</p>
-                    </button>
-                `).join('')}
-            </div>
         </div>
 
         <div class="glass-card">
