@@ -1612,11 +1612,18 @@ async function renderDashboard() {
             </div>
         ` : '';
 
+        let heroBgUrl = './hero_mosque_night_1777635162540.png';
+        if (state.background.type === 'custom' && state.background.url) {
+            heroBgUrl = state.background.url;
+        } else if (state.background.type === 'cycle' && typeof bgCycleList !== 'undefined') {
+            heroBgUrl = bgCycleList[currentBgIdx] || './hero_mosque_night_1777635162540.png';
+        }
+
         contentArea.innerHTML = `
             <div class="premium-dashboard" style="animation: entrance 0.8s var(--anim-spring) both;">
                 
                 <!-- ===== HERO SECTION ===== -->
-                <div class="hero-section" style="min-height: 400px; background: linear-gradient(to right, var(--bg-main), rgba(var(--primary-blue-rgb), 0.1)), url('./hero_mosque_night_1777635162540.png'); background-size: cover; background-position: center; border-radius: 24px; padding: var(--side-padding); margin-bottom: 1.5rem; position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: center; border: 1px solid var(--border-color);">
+                <div class="hero-section" style="min-height: 400px; background: linear-gradient(to right, var(--bg-main), rgba(var(--primary-blue-rgb), 0.1)), url('${heroBgUrl}'); background-size: cover; background-position: center; border-radius: 24px; padding: var(--side-padding); margin-bottom: 1.5rem; position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: center; border: 1px solid var(--border-color);">
                     
                     <!-- Jummah Bubble - Adaptive positioning (Friday Only) -->
                     ${new Date().getDay() === 5 ? `
@@ -4586,6 +4593,8 @@ async function renderSettings() {
                 <label style="font-size: 0.75rem;">Custom Image URL</label>
                 <input type="text" id="set-bg-url" value="${state.background.url}" placeholder="https://example.com/bg.jpg" onchange="window.app.applyBackground()" style="width: 100%; padding: 0.8rem; border-radius: 10px; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); color: white; outline: none; margin-top: 0.5rem;">
             </div>
+
+            <button class="btn-primary" style="margin-top: 1.5rem; width: 100%;" onclick="window.app.saveSettings(this)">Save Dashboard Appearance</button>
 
 
         </div>
