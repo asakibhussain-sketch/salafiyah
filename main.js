@@ -571,7 +571,6 @@ window.app = {
     toggleReciterModal: () => toggleReciterModal(),
     setReciter: (id) => setReciter(id),
     speakArabic: (text) => speakArabic(text),
-    syncUserData: () => syncUserData(),
     exportSyncKey: () => exportSyncKey(),
     importSyncKey: () => importSyncKey(),
     saveGoals: () => saveGoals(),
@@ -2250,7 +2249,6 @@ function updateAccentColor(hex) {
     localStorage.setItem('app_settings', JSON.stringify(state.settings));
     applyCustomization();
     renderCustomization();
-    syncUserData();
 }
 
 function updateDensity(density) {
@@ -4701,15 +4699,6 @@ async function renderSettings() {
             <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 1.5rem;">Access your spiritual journey on any device.</p>
             
             <div style="display: flex; flex-direction: column; gap: 1rem;">
-                <div style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
-                    <div>
-                        <div style="font-size: 0.85rem; font-weight: 700;">Account Sync</div>
-                        <div style="font-size: 0.7rem; color: var(--text-muted);">${state.user ? `Logged in as ${state.user.email}` : 'Not signed in'}</div>
-                    </div>
-                    <button class="btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.75rem;" onclick="${state.user ? 'window.app.syncUserData()' : 'window.app.toggleAuth()'}">
-                        ${state.user ? 'Sync Now' : 'Sign In'}
-                    </button>
-                </div>
 
                 <div style="display: flex; gap: 0.5rem;">
                     <button class="btn-secondary" style="flex: 1; padding: 0.8rem; font-size: 0.75rem; justify-content: center;" onclick="window.app.exportSyncKey()">
@@ -5010,8 +4999,6 @@ function saveSettings() {
     } else {
         fetchPrayerTimes();
     }
-    
-    syncUserData();
     alert('Preferences saved!');
 }
 
@@ -5104,7 +5091,6 @@ function saveLocation() {
     state.location = { city, country };
     localStorage.setItem('location', JSON.stringify(state.location));
     fetchPrayerTimes();
-    syncUserData();
     alert('Location updated!');
 }
 
@@ -5224,7 +5210,6 @@ function handleTasbihClick(e) {
 
     // Save to local storage
     localStorage.setItem('tasbih_counts', JSON.stringify(state.tasbih.counts));
-    syncUserData();
 
     // Haptic feedback
     vibrate('soft');
@@ -5236,7 +5221,6 @@ function resetTasbih() {
     if (confirm(`Reset count for "${phrase}"?`)) {
         state.tasbih.counts[phrase] = 0;
         localStorage.setItem('tasbih_counts', JSON.stringify(state.tasbih.counts));
-        syncUserData();
         renderTasbih();
     }
 }
