@@ -167,6 +167,7 @@ function setAnimationIntensity(intensity, options = {}) {
     const val = Math.max(0, Math.min(1, parseFloat(intensity) || 0));
     document.documentElement.style.setProperty('--anim-intensity', val);
     if (window.settingsManager) window.settingsManager.set('appearance', 'animationIntensity', val);
+    if (window.state && window.state.settings) { window.state.settings.animationIntensity = val; }
     if (options.render === true) refreshSettingsPanel();
 }
 
@@ -175,6 +176,7 @@ function setBlurIntensity(blur, options = {}) {
     const val = Math.max(0, Math.min(40, parseFloat(blur) || 0));
     document.documentElement.style.setProperty('--blur-intensity', `${val}px`);
     if (window.settingsManager) window.settingsManager.set('appearance', 'blurIntensity', val);
+    if (window.state && window.state.settings) { window.state.settings.blurIntensity = val; }
     if (options.render === true) refreshSettingsPanel();
 }
 
@@ -183,6 +185,7 @@ function setCardRadius(radius, options = {}) {
     const val = Math.max(12, Math.min(40, parseFloat(radius) || 28));
     document.documentElement.style.setProperty('--card-radius', `${val}px`);
     if (window.settingsManager) window.settingsManager.set('appearance', 'cardRadius', val);
+    if (window.state && window.state.settings) { window.state.settings.cardRadius = val; }
     if (options.render === true) refreshSettingsPanel();
 }
 
@@ -191,6 +194,7 @@ function setFontScale(scale, options = {}) {
     const val = Math.max(0.92, Math.min(1.14, parseFloat(scale) || 1));
     document.documentElement.style.setProperty('--font-scale', val);
     if (window.settingsManager) window.settingsManager.set('appearance', 'fontSize', val);
+    if (window.state && window.state.settings) { window.state.settings.fontScale = val; }
     if (options.render === true) refreshSettingsPanel();
 }
 
@@ -200,6 +204,7 @@ function setDensity(density, options = {}) {
     document.body.classList.remove('density-compact', 'density-spacious', 'density-regular');
     document.body.classList.add(`density-${normalized}`);
     if (options.persist !== false && window.settingsManager) window.settingsManager.set('appearance', 'uiDensity', normalized);
+    if (window.state && window.state.settings) { window.state.settings.uiDensity = normalized; }
     if (options.render !== false) refreshSettingsPanel();
 }
 
@@ -208,6 +213,7 @@ function setAmbientEnabled(enabled, options = {}) {
     const active = !!enabled;
     document.body.classList.toggle('ambient-disabled', !active);
     if (options.persist !== false && window.settingsManager) window.settingsManager.set('appearance', 'ambientEnabled', active);
+    if (window.state && window.state.settings) { window.state.settings.ambientEnabled = active; }
     if (options.render !== false) refreshSettingsPanel();
 }
 
@@ -216,6 +222,7 @@ function setPatternEnabled(enabled, options = {}) {
     const active = !!enabled;
     document.body.classList.toggle('pattern-disabled', !active);
     if (options.persist !== false && window.settingsManager) window.settingsManager.set('appearance', 'patternEnabled', active);
+    if (window.state && window.state.settings) { window.state.settings.patternEnabled = active; }
     if (options.render !== false) refreshSettingsPanel();
 }
 
@@ -224,6 +231,7 @@ function setImmersiveMode(enabled, options = {}) {
     const active = !!enabled;
     document.body.classList.toggle('immersive-mode', active);
     if (options.persist !== false && window.settingsManager) window.settingsManager.set('appearance', 'immersiveMode', active);
+    if (window.state && window.state.settings) { window.state.settings.immersiveMode = active; }
     if (options.render !== false) refreshSettingsPanel();
 }
 
@@ -239,6 +247,7 @@ function setDynamicPrayerTheme(enabled) {
         const theme = window.settingsManager ? window.settingsManager.get('appearance', 'theme') : 'light';
         applyTheme(theme);
     }
+    if (window.state && window.state.settings) { window.state.settings.dynamicPrayerTheme = active; }
     refreshSettingsPanel();
 }
 
