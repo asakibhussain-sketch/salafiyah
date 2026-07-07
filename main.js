@@ -2512,6 +2512,8 @@ async function renderCalendar() {
         
         // Grab Hijri Info from first day of month just for header
         const hijriHeader = isCurrentMonth && state.hijri ? state.hijri : data[0].date.hijri;
+        const hLang = state.settings.hijriLanguage || 'en';
+        const hMonthDisp = hLang === 'ar' ? hijriHeader.month.ar : (hLang === 'both' ? hijriHeader.month.en + ' (' + hijriHeader.month.ar + ')' : hijriHeader.month.en);
 
         contentArea.innerHTML = `
             <div style="animation: entrance 0.6s var(--anim-spring) both;">
@@ -2519,7 +2521,7 @@ async function renderCalendar() {
                 
                 <div class="glass-card" style="margin-bottom: 2rem; padding: 2.5rem; text-align: center; background: linear-gradient(135deg, rgba(var(--primary-blue-rgb), 0.1), transparent); border: 1px solid var(--border-color);">
                     <div style="font-size: 0.85rem; font-weight: 800; color: var(--accent-gold); text-transform: uppercase; letter-spacing: 0.2em; margin-bottom: 1rem;">${isCurrentMonth ? 'Current Date' : 'Viewing Month'}</div>
-                    <h2 style="font-size: 2.5rem; margin-bottom: 0.5rem; color: var(--text-primary);">${isCurrentMonth ? hijriHeader.day : hijriHeader.month.en} ${isCurrentMonth ? hijriHeader.month.en : ''} ${hijriHeader.year}</h2>
+                    <h2 style="font-size: 2.5rem; margin-bottom: 0.5rem; color: var(--text-primary);">${isCurrentMonth ? hijriHeader.day : hMonthDisp} ${isCurrentMonth ? hMonthDisp : ''} ${hijriHeader.year}</h2>
                     <p style="color: var(--text-secondary); opacity: 0.8; font-weight: 600;">${monthName} ${year}</p>
                 </div>
 
