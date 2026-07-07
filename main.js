@@ -4994,12 +4994,13 @@ function saveSettings() {
 
     if (refetchRequired) {
         // Clear caches and force refetch
-        localStorage.removeItem('salafiyah_timings_' + window.prayerEngine.todayKey());
+        if (window.prayerEngine) {
+            localStorage.removeItem('salafiyah_timings_' + window.prayerEngine.todayKey());
+        }
         fetchPrayerTimes();
     } else {
         fetchPrayerTimes();
     }
-    alert('Preferences saved!');
 }
 
 const bgCycleList = [
