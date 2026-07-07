@@ -109,72 +109,25 @@ function getPremiumSettings() {
     return {};
 }
 
-function safeJsonStorage(key) {
-    try {
-        return JSON.parse(localStorage.getItem(key)) || {};
-    } catch (e) {
-        return {};
-    }
-}
 
-function persistPremiumSettings() {
-    if (typeof state !== 'undefined' && state.settings) {
-        localStorage.setItem('app_settings', JSON.stringify(state.settings));
-        if (typeof triggerAutoSync === 'function') triggerAutoSync();
-    }
-}
 
-function readNumberSetting(key, fallback, min, max) {
-    const settings = getPremiumSettings();
-    const stored = localStorage.getItem(key);
-    const raw = stored !== null ? stored : settings[key];
-    const parsed = parseFloat(raw);
-    const value = Number.isFinite(parsed) ? parsed : fallback;
-    return Math.max(min, Math.min(max, value));
-}
 
-function readBooleanSetting(key, storageKey, fallback = false) {
-    const settings = getPremiumSettings();
-    const stored = localStorage.getItem(storageKey || key);
-    if (stored !== null) return stored === 'true';
-    return typeof settings[key] === 'boolean' ? settings[key] : fallback;
-}
 
 function initThemeSystem() {
-    const settings = getPremiumSettings();
-    const savedAppSettings = safeJsonStorage('app_settings');
-    const savedTheme = localStorage.getItem('app_theme') ||
-        settings.currentTheme ||
-        savedAppSettings.currentTheme ||
-        localStorage.getItem('theme') ||
-        'light';
-
-    settings.currentTheme = PREMIUM_THEMES[savedTheme] ? savedTheme : 'light';
-    settings.animationIntensity = readNumberSetting('anim_intensity', savedAppSettings.animationIntensity || 1, 0, 1);
-    settings.blurIntensity = readNumberSetting('blur_intensity', savedAppSettings.blurIntensity || 20, 0, 40);
-    settings.cardRadius = readNumberSetting('card_radius', savedAppSettings.cardRadius || 28, 12, 40);
-    settings.fontScale = readNumberSetting('font_scale', savedAppSettings.fontScale || 1, 0.92, 1.14);
-    settings.dynamicPrayerTheme = readBooleanSetting('dynamicPrayerTheme', 'dynamic_prayer_theme', false);
-    settings.immersiveMode = readBooleanSetting('immersiveMode', 'immersive_mode', false);
-    settings.ambientEnabled = readBooleanSetting('ambientEnabled', 'ambient_enabled', true);
-    settings.patternEnabled = readBooleanSetting('patternEnabled', 'pattern_enabled', true);
-    settings.uiDensity = localStorage.getItem('ui_density') || settings.uiDensity || 'regular';
-
-    applyTheme(settings.currentTheme, { persist: false });
-    applyAppearanceSettings();
+    const sm = window.settingsManager;
+    if (!sm) return;
+    
     installPremiumRuntime();
 
-    if (settings.dynamicPrayerTheme) {
+    if (sm.get('appearance', 'dynamicPrayerTheme')) {
         initPrayerThemeMode();
     }
-
-    persistPremiumSettings();
 }
 
+
 function applyTheme(themeId, options = {}) {
-    const settings = getPremiumSettings();
-    const body = document.body;
     const theme = PREMIUM_THEMES[themeId] ? themeId : 'light';
+    const body = document.body;
 
     [...PREMIUM_THEME_CLASSES, ...LEGACY_THEME_CLASSES].forEach(className => body.classList.remove(className));
     body.classList.add(theme === 'dark' || theme === 'light' ? `${theme}-theme` : theme);
@@ -184,13 +137,13 @@ function applyTheme(themeId, options = {}) {
     const metaTheme = document.querySelector('meta[name="theme-color"]');
     if (metaTheme) metaTheme.setAttribute('content', PREMIUM_THEMES[theme].themeColor);
 
-    settings.currentTheme = theme;
-    if (typeof state !== 'undefined') state.theme = PREMIUM_THEMES[theme].isDark ? 'dark' : 'light';
-
-    if (options.persist !== false) {
-        localStorage.setItem('app_theme', theme);
-        localStorage.setItem('theme', PREMIUM_THEMES[theme].isDark ? 'dark' : 'light');
-        persistPremiumSettings();
+    if (options.persist !== false && window.settingsManager) {
+        window.settingsManager.set('appearance', 'theme', theme);
+    }
+    
+    if (typeof state !== 'undefined' && state.settings) {
+        state.settings.currentTheme = theme;
+        state.theme = PREMIUM_THEMES[theme].isDark ? 'dark' : 'light';
     }
 
     window.dispatchEvent(new CustomEvent('salafiyah:theme-changed', {
@@ -198,119 +151,97 @@ function applyTheme(themeId, options = {}) {
     }));
 }
 
+
 function setTheme(themeId) {
-    const settings = getPremiumSettings();
-    settings.dynamicPrayerTheme = false;
-    localStorage.setItem('dynamic_prayer_theme', 'false');
+    if (window.settingsManager) {
+        window.settingsManager.set('appearance', 'dynamicPrayerTheme', false);
+    }
     clearPrayerThemeTimer();
     applyTheme(themeId);
     refreshSettingsPanel();
 }
 
-function applyAppearanceSettings() {
-    const settings = getPremiumSettings();
-    setAnimationIntensity(settings.animationIntensity ?? 1, { render: false });
-    setBlurIntensity(settings.blurIntensity ?? 20, { render: false });
-    setCardRadius(settings.cardRadius ?? 28, { render: false });
-    setFontScale(settings.fontScale ?? 1, { render: false });
-    setDensity(settings.uiDensity || 'regular', { render: false, persist: false });
-    setAmbientEnabled(settings.ambientEnabled !== false, { render: false, persist: false });
-    setPatternEnabled(settings.patternEnabled !== false, { render: false, persist: false });
-    setImmersiveMode(!!settings.immersiveMode, { render: false, persist: false });
-}
+
 
 function setAnimationIntensity(intensity, options = {}) {
     const val = Math.max(0, Math.min(1, parseFloat(intensity) || 0));
     document.documentElement.style.setProperty('--anim-intensity', val);
-    localStorage.setItem('anim_intensity', val);
-    getPremiumSettings().animationIntensity = val;
-    persistPremiumSettings();
+    if (window.settingsManager) window.settingsManager.set('appearance', 'animationIntensity', val);
     if (options.render === true) refreshSettingsPanel();
 }
+
 
 function setBlurIntensity(blur, options = {}) {
     const val = Math.max(0, Math.min(40, parseFloat(blur) || 0));
     document.documentElement.style.setProperty('--blur-intensity', `${val}px`);
-    localStorage.setItem('blur_intensity', val);
-    getPremiumSettings().blurIntensity = val;
-    persistPremiumSettings();
+    if (window.settingsManager) window.settingsManager.set('appearance', 'blurIntensity', val);
     if (options.render === true) refreshSettingsPanel();
 }
+
 
 function setCardRadius(radius, options = {}) {
     const val = Math.max(12, Math.min(40, parseFloat(radius) || 28));
     document.documentElement.style.setProperty('--card-radius', `${val}px`);
-    localStorage.setItem('card_radius', val);
-    getPremiumSettings().cardRadius = val;
-    persistPremiumSettings();
+    if (window.settingsManager) window.settingsManager.set('appearance', 'cardRadius', val);
     if (options.render === true) refreshSettingsPanel();
 }
+
 
 function setFontScale(scale, options = {}) {
     const val = Math.max(0.92, Math.min(1.14, parseFloat(scale) || 1));
     document.documentElement.style.setProperty('--font-scale', val);
-    localStorage.setItem('font_scale', val);
-    getPremiumSettings().fontScale = val;
-    persistPremiumSettings();
+    if (window.settingsManager) window.settingsManager.set('appearance', 'fontSize', val);
     if (options.render === true) refreshSettingsPanel();
 }
+
 
 function setDensity(density, options = {}) {
     const normalized = ['compact', 'regular', 'spacious'].includes(density) ? density : 'regular';
     document.body.classList.remove('density-compact', 'density-spacious', 'density-regular');
     document.body.classList.add(`density-${normalized}`);
-    getPremiumSettings().uiDensity = normalized;
-
-    if (options.persist !== false) {
-        localStorage.setItem('ui_density', normalized);
-        persistPremiumSettings();
-    }
-
+    if (options.persist !== false && window.settingsManager) window.settingsManager.set('appearance', 'uiDensity', normalized);
     if (options.render !== false) refreshSettingsPanel();
 }
+
 
 function setAmbientEnabled(enabled, options = {}) {
     const active = !!enabled;
     document.body.classList.toggle('ambient-disabled', !active);
-    localStorage.setItem('ambient_enabled', active);
-    getPremiumSettings().ambientEnabled = active;
-    if (options.persist !== false) persistPremiumSettings();
+    if (options.persist !== false && window.settingsManager) window.settingsManager.set('appearance', 'ambientEnabled', active);
     if (options.render !== false) refreshSettingsPanel();
 }
+
 
 function setPatternEnabled(enabled, options = {}) {
     const active = !!enabled;
     document.body.classList.toggle('pattern-disabled', !active);
-    localStorage.setItem('pattern_enabled', active);
-    getPremiumSettings().patternEnabled = active;
-    if (options.persist !== false) persistPremiumSettings();
+    if (options.persist !== false && window.settingsManager) window.settingsManager.set('appearance', 'patternEnabled', active);
     if (options.render !== false) refreshSettingsPanel();
 }
+
 
 function setImmersiveMode(enabled, options = {}) {
     const active = !!enabled;
     document.body.classList.toggle('immersive-mode', active);
-    localStorage.setItem('immersive_mode', active);
-    getPremiumSettings().immersiveMode = active;
-    if (options.persist !== false) persistPremiumSettings();
+    if (options.persist !== false && window.settingsManager) window.settingsManager.set('appearance', 'immersiveMode', active);
     if (options.render !== false) refreshSettingsPanel();
 }
 
+
 function setDynamicPrayerTheme(enabled) {
     const active = !!enabled;
-    getPremiumSettings().dynamicPrayerTheme = active;
-    localStorage.setItem('dynamic_prayer_theme', active);
+    if (window.settingsManager) window.settingsManager.set('appearance', 'dynamicPrayerTheme', active);
 
     if (active) {
         initPrayerThemeMode();
     } else {
         clearPrayerThemeTimer();
-        applyTheme(localStorage.getItem('app_theme') || getPremiumSettings().currentTheme || 'light');
+        const theme = window.settingsManager ? window.settingsManager.get('appearance', 'theme') : 'light';
+        applyTheme(theme);
     }
-
-    persistPremiumSettings();
     refreshSettingsPanel();
 }
+
 
 function clearPrayerThemeTimer() {
     if (prayerThemeTimer) {
@@ -543,15 +474,22 @@ function saveWidgetOrder(grid) {
     const order = Array.from(grid.children)
         .filter(child => child.dataset.widgetKey)
         .map(child => child.dataset.widgetKey);
-    localStorage.setItem(getWidgetStorageKey(grid), JSON.stringify(order));
+    
+if (window.settingsManager) {
+    const orders = window.settingsManager.get('dashboard', 'widgetOrder') || [];
+    const gridIndex = Array.from(grid.parentElement.querySelectorAll('.widget-grid')).indexOf(grid);
+    orders[gridIndex] = order;
+    window.settingsManager.set('dashboard', 'widgetOrder', orders);
+}
+
 }
 
 function applyWidgetOrder(grid) {
     let order = [];
-    try {
-        order = JSON.parse(localStorage.getItem(getWidgetStorageKey(grid))) || [];
-    } catch (e) {
-        order = [];
+    if (window.settingsManager) {
+        const orders = window.settingsManager.get('dashboard', 'widgetOrder') || [];
+        const gridIndex = Array.from(grid.parentElement.querySelectorAll('.widget-grid')).indexOf(grid);
+        order = orders[gridIndex] || [];
     }
 
     if (!order.length) return;
@@ -573,19 +511,23 @@ function ensureSidebarControls() {
     button.type = 'button';
     button.setAttribute('aria-label', 'Collapse sidebar');
     button.innerHTML = '<span aria-hidden="true">|</span>';
+    
+    const isCollapsed = window.settingsManager ? window.settingsManager.get('dashboard', 'sidebarCollapsed') : false;
+    
     button.addEventListener('click', () => {
         const collapsed = !document.body.classList.contains('sidebar-collapsed');
         document.body.classList.toggle('sidebar-collapsed', collapsed);
         button.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
-        localStorage.setItem('sidebar_collapsed', collapsed);
+        if (window.settingsManager) window.settingsManager.set('dashboard', 'sidebarCollapsed', collapsed);
     });
     sidebar.appendChild(button);
 
-    if (localStorage.getItem('sidebar_collapsed') === 'true') {
+    if (isCollapsed) {
         document.body.classList.add('sidebar-collapsed');
         button.setAttribute('aria-label', 'Expand sidebar');
     }
 }
+
 
 function getColorSchemeForTheme(themeId) {
     const schemes = {

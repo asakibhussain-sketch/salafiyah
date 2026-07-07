@@ -178,9 +178,12 @@ const getInitialState = () => {
             });
             return hj;
         } catch (e) {
-            return { day: '1', month: { en: 'Ramadan' }, year: '1447' };
-        }
-    })();
+                const sm = window.settingsManager ? window.settingsManager.getAll() : {};
+    const app = sm.appearance || {};
+    const quran = sm.quran || {};
+    const prayer = sm.prayer || {};
+    const dash = sm.dashboard || {};
+    const gen = sm.general || {};
 
     return {
         mushafOffline: {
@@ -189,8 +192,8 @@ const getInitialState = () => {
             isDownloaded: localStorage.getItem('mushaf_downloaded') === 'true'
         },
         currentScreen: 'dashboard',
-        user: JSON.parse(localStorage.getItem('user')) || null,
-        theme: localStorage.getItem('theme') || 'light',
+        user: null,
+        theme: app.theme || 'light',
         tasbih: {
             counts: JSON.parse(localStorage.getItem('tasbih_counts')) || {},
             currentPhrase: localStorage.getItem('tasbih_current_phrase') || 'SubhanAllah',
@@ -207,7 +210,7 @@ const getInitialState = () => {
             { id: 'Astaghfirullah', arabic: 'أَسْتَغْفِرُ اللهَ', roman: 'Astaghfirullah' }
         ],
         tracker,
-        bookmarks: JSON.parse(localStorage.getItem('bookmarks')) || { mushaf: [], quran: [], ayah: [] },
+        bookmarks: quran.bookmarks || { mushaf: [], quran: [], ayah: [] },
         goals: JSON.parse(localStorage.getItem('goals')) || {
             mushaf: { type: 'custom', target: 5, progress: 0 },
             tasbih: { type: 'custom', target: 1000, progress: 0 },
@@ -228,48 +231,44 @@ const getInitialState = () => {
             currentSurah: 1,
             currentAyah: 1
         },
-        lastRead: JSON.parse(localStorage.getItem('last_read')) || {
+        lastRead: quran.lastRead || {
             surahNum: 67,
             surahName: 'Al-Mulk',
             ayahNum: 1,
             page: 562,
             type: 'mushaf'
         },
-        settings: JSON.parse(localStorage.getItem('app_settings')) || {
-            method: 3,
-            format24: true,
-            school: 0,
-            ramadanMode: false,
-            alarmsEnabled: true,
-            translationEdition: localStorage.getItem('translation_edition') || 'en.asad',
-            mushafPage: parseInt(localStorage.getItem('mushaf_page')) || 1,
-            uiLanguage: localStorage.getItem('ui_language') || 'en',
-            tajweedEnabled: localStorage.getItem('tajweed_enabled') === 'true',
-            accentColor: localStorage.getItem('accent_color') || '#006994',
-            uiDensity: localStorage.getItem('ui_density') || 'regular',
-            
-            hijriOffset: localStorage.getItem('hijri_offset') !== null ? parseInt(localStorage.getItem('hijri_offset')) : 1,
-            hapticStyle: localStorage.getItem('haptic_style') || 'soft',
-            currentTheme: localStorage.getItem('app_theme') || localStorage.getItem('theme') || 'light',
-            animationIntensity: parseFloat(localStorage.getItem('anim_intensity')) || 1,
-            blurIntensity: parseFloat(localStorage.getItem('blur_intensity')) || 20,
-            cardRadius: parseFloat(localStorage.getItem('card_radius')) || 28,
-            fontScale: parseFloat(localStorage.getItem('font_scale')) || 1,
-            ambientEnabled: localStorage.getItem('ambient_enabled') !== 'false',
-            patternEnabled: localStorage.getItem('pattern_enabled') !== 'false',
-            dynamicPrayerTheme: localStorage.getItem('dynamic_prayer_theme') === 'true',
-            immersiveMode: localStorage.getItem('immersive_mode') === 'true',
-            hijriAfterMaghrib: localStorage.getItem('hijri_after_maghrib') === 'true',
-            hijriLanguage: localStorage.getItem('hijri_language') || 'en'
+        settings: {
+            method: prayer.method ?? 3,
+            format24: gen.timeFormat24 ?? true,
+            school: prayer.school ?? 0,
+            ramadanMode: prayer.ramadanMode ?? false,
+            alarmsEnabled: prayer.alarmsEnabled ?? true,
+            translationEdition: quran.translation ?? 'en.asad',
+            mushafPage: quran.lastRead?.page ?? 1,
+            uiLanguage: gen.language ?? 'en',
+            tajweedEnabled: quran.tajweedEnabled ?? false,
+            accentColor: app.accentColor ?? '#006994',
+            uiDensity: app.uiDensity ?? 'regular',
+            hijriOffset: prayer.hijriOffset ?? 1,
+            hapticStyle: app.hapticStyle ?? 'soft',
+            currentTheme: app.theme ?? 'light',
+            animationIntensity: app.animationIntensity ?? 1,
+            blurIntensity: app.blurIntensity ?? 20,
+            cardRadius: app.cardRadius ?? 28,
+            fontScale: app.fontSize ?? 1,
+            ambientEnabled: app.ambientEnabled ?? true,
+            patternEnabled: app.patternEnabled ?? true,
+            dynamicPrayerTheme: app.dynamicPrayerTheme ?? false,
+            immersiveMode: app.immersiveMode ?? false,
+            hijriAfterMaghrib: prayer.hijriAfterMaghrib ?? false,
+            hijriLanguage: prayer.hijriLanguage ?? 'en'
         },
-        location: JSON.parse(localStorage.getItem('location')) || { city: 'Mecca', country: 'SA' },
+        location: prayer.location || { city: 'Mecca', country: 'SA' },
         hijri: JSON.parse(localStorage.getItem('hijri_data')) || offlineHijri,
         prayerTimes: JSON.parse(localStorage.getItem('prayer_times')) || null,
         coordinates: null,
-        background: {
-            type: localStorage.getItem('bg_type') || 'default',
-            url: localStorage.getItem('bg_url') || '',
-        },
+        background: app.backgroundImage || { type: 'default', url: '' },
         audio: {
             isPlaying: false,
             currentSurah: null,
@@ -291,7 +290,7 @@ const getInitialState = () => {
             history: JSON.parse(localStorage.getItem('quiz_history')) || [],
             totalScore: parseInt(localStorage.getItem('quiz_total_score')) || 0
         },
-        showTranslit: localStorage.getItem('show_translit') === 'true'
+        showTranslit: quran.showTranslit ?? false
     };
 };
 
@@ -299,36 +298,7 @@ const getInitialState = () => {
 const state = getInitialState();
 window.state = state;
 
-state.settings = {
-    method: 3,
-    format24: true,
-    school: 0,
-    ramadanMode: false,
-    alarmsEnabled: true,
-    translationEdition: localStorage.getItem('translation_edition') || 'en.asad',
-    mushafPage: parseInt(localStorage.getItem('mushaf_page')) || 1,
-    uiLanguage: localStorage.getItem('ui_language') || 'en',
-    tajweedEnabled: localStorage.getItem('tajweed_enabled') === 'true',
-    accentColor: localStorage.getItem('accent_color') || '#006994',
-    uiDensity: localStorage.getItem('ui_density') || 'regular',
-    
-    hapticStyle: localStorage.getItem('haptic_style') || 'soft',
-    currentTheme: localStorage.getItem('app_theme') || localStorage.getItem('theme') || 'light',
-    animationIntensity: parseFloat(localStorage.getItem('anim_intensity')) || 1,
-    blurIntensity: parseFloat(localStorage.getItem('blur_intensity')) || 20,
-    cardRadius: parseFloat(localStorage.getItem('card_radius')) || 28,
-    fontScale: parseFloat(localStorage.getItem('font_scale')) || 1,
-    ambientEnabled: localStorage.getItem('ambient_enabled') !== 'false',
-    patternEnabled: localStorage.getItem('pattern_enabled') !== 'false',
-    dynamicPrayerTheme: localStorage.getItem('dynamic_prayer_theme') === 'true',
-    immersiveMode: localStorage.getItem('immersive_mode') === 'true',
-    ...state.settings
-};
 
-state.settings.currentTheme = localStorage.getItem('app_theme') || state.settings.currentTheme || 'light';
-state.settings.uiDensity = localStorage.getItem('ui_density') || state.settings.uiDensity || 'regular';
-state.settings.dynamicPrayerTheme = localStorage.getItem('dynamic_prayer_theme') === 'true' || state.settings.dynamicPrayerTheme === true;
-state.settings.immersiveMode = localStorage.getItem('immersive_mode') === 'true' || state.settings.immersiveMode === true;
 let verseAudio = null;
 let verseAudioPlaying = false;
 let currentAdhan = null;
@@ -1191,7 +1161,7 @@ async function playSurahAudio(surahId) {
         if (state.currentScreen === 'mushaf' && data.data.ayahs && data.data.ayahs.length > 0) {
             const startPage = data.data.ayahs[0].page;
             state.settings.mushafPage = startPage;
-            localStorage.setItem('mushaf_page', startPage);
+            if (window.settingsManager) window.settingsManager.set('quran', 'lastRead', { ...(window.settingsManager.get('quran', 'lastRead') || {}), page: startPage });
             renderMushaf();
         }
 
@@ -1401,7 +1371,7 @@ async function playAyahAudio(surahId, ayahNum) {
         if (state.currentScreen === 'mushaf' && data.data.ayahs && data.data.ayahs.length > 0) {
             const startPage = data.data.ayahs[ayahIndex > -1 ? ayahIndex : 0].page;
             state.settings.mushafPage = startPage;
-            localStorage.setItem('mushaf_page', startPage);
+            if (window.settingsManager) window.settingsManager.set('quran', 'lastRead', { ...(window.settingsManager.get('quran', 'lastRead') || {}), page: startPage });
             renderMushaf();
         }
 
@@ -2384,7 +2354,7 @@ function renderLanguages() {
 
 function setTranslation(id) {
     state.settings.translationEdition = id;
-    localStorage.setItem('translation_edition', id);
+    if (window.settingsManager) window.settingsManager.set('quran', 'translation', id);
     localStorage.setItem('app_settings', JSON.stringify(state.settings));
     renderLanguages(); // Refresh list to show active state
     alert('Translation updated successfully!');
@@ -2434,7 +2404,7 @@ function showLanguagePicker() {
 
 function setLanguage(lang) {
     state.settings.uiLanguage = lang;
-    localStorage.setItem('ui_language', lang);
+    if (window.settingsManager) window.settingsManager.set('general', 'language', lang);
     localStorage.setItem('app_settings', JSON.stringify(state.settings));
 
     // Refresh UI
@@ -4084,7 +4054,7 @@ async function detectLocation() {
                 const country = data.countryCode || 'SA';
 
                 state.location = { city, country };
-                localStorage.setItem('location', JSON.stringify(state.location));
+                if (window.settingsManager) window.settingsManager.set('prayer', 'location', state.location, true);
 
                 if (state.currentScreen === 'settings') renderSettings();
                 fetchPrayerTimes();
@@ -4952,8 +4922,18 @@ function saveSettings(btn = null) {
         localStorage.setItem('hijri_language', state.settings.hijriLanguage);
     }
 
-    localStorage.setItem('app_settings', JSON.stringify(state.settings));
-    localStorage.setItem('tajweed_enabled', state.settings.tajweedEnabled);
+    if (window.settingsManager) {
+        window.settingsManager.set('prayer', 'method', state.settings.method);
+        window.settingsManager.set('general', 'timeFormat24', state.settings.format24);
+        window.settingsManager.set('prayer', 'ramadanMode', state.settings.ramadanMode);
+        window.settingsManager.set('prayer', 'alarmsEnabled', state.settings.alarmsEnabled);
+        window.settingsManager.set('quran', 'tajweedEnabled', state.settings.tajweedEnabled);
+        window.settingsManager.set('prayer', 'hijriOffset', state.settings.hijriOffset);
+        window.settingsManager.set('prayer', 'hijriAfterMaghrib', state.settings.hijriAfterMaghrib);
+        window.settingsManager.set('prayer', 'hijriLanguage', state.settings.hijriLanguage);
+        window.settingsManager.set('appearance', 'hapticStyle', state.settings.hapticStyle);
+        window.settingsManager.saveSync();
+    }
 
     // Save Background Settings
     const bgType = document.getElementById('set-bg-type')?.value;
@@ -4969,6 +4949,7 @@ function saveSettings(btn = null) {
     if (bgType) {
         state.background.type = bgType;
         state.background.url = bgUrl;
+        if (window.settingsManager) window.settingsManager.set('appearance', 'backgroundImage', { type: bgType, url: bgUrl }, true);
         applyBackground();
     }
 
@@ -5083,7 +5064,7 @@ function saveLocation() {
     }
 
     state.location = { city, country };
-    localStorage.setItem('location', JSON.stringify(state.location));
+    if (window.settingsManager) window.settingsManager.set('prayer', 'location', state.location, true);
     fetchPrayerTimes();
     alert('Location updated!');
 }
@@ -5626,7 +5607,7 @@ function parseTajweed(text) {
 
 function resetMushaf() {
     state.settings.mushafPage = 1;
-    localStorage.setItem('mushaf_page', 1);
+    if (window.settingsManager) window.settingsManager.set('quran', 'lastRead', { ...(window.settingsManager.get('quran', 'lastRead') || {}), page: 1 });
     renderMushaf();
 }
 
@@ -5634,7 +5615,7 @@ function changeMushafPage(delta) {
     const newPage = state.settings.mushafPage + delta;
     if (newPage >= 1 && newPage <= 604) {
         state.settings.mushafPage = newPage;
-        localStorage.setItem('mushaf_page', newPage);
+        if (window.settingsManager) window.settingsManager.set('quran', 'lastRead', { ...(window.settingsManager.get('quran', 'lastRead') || {}), page: newPage });
 
         // Update Goal Progress
         if (delta > 0) {
@@ -5651,7 +5632,7 @@ function changeMushafPage(delta) {
 
 function setUILanguage(lang) {
     state.settings.uiLanguage = lang;
-    localStorage.setItem('ui_language', lang);
+    if (window.settingsManager) window.settingsManager.set('general', 'language', lang);
     applyRTL(lang);
     toggleLanguageModal();
     // Re-render nav and current screen
@@ -5971,7 +5952,7 @@ function setReciter(id) {
 
 function setTranslation(id) {
     state.settings.translationEdition = id;
-    localStorage.setItem('translation_edition', id);
+    if (window.settingsManager) window.settingsManager.set('quran', 'translation', id);
     toggleLanguageModal();
     if (state.currentScreen === 'quran') {
         // Reload Quran list if needed, or if in a surah, reload it
@@ -5986,7 +5967,7 @@ function setTranslation(id) {
 
 function toggleTranslit() {
     state.showTranslit = !state.showTranslit;
-    localStorage.setItem('show_translit', state.showTranslit);
+    if (window.settingsManager) window.settingsManager.set('quran', 'showTranslit', state.showTranslit);
 
     // If in surah view, reload to apply
     const screenTitleEl = document.getElementById('screen-title');
@@ -6198,7 +6179,7 @@ function toggleBookmark(type, id, metadata) {
         vibrate('medium'); // Success feedback
     }
 
-    localStorage.setItem('bookmarks', JSON.stringify(state.bookmarks));
+    if (window.settingsManager) window.settingsManager.set('quran', 'bookmarks', state.bookmarks, true);
 
     // Refresh current screen if relevant
     if (state.currentScreen === 'bookmarks') renderBookmarks();

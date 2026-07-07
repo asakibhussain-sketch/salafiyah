@@ -19,12 +19,11 @@
 </head>
 
 <body class="light-theme">
+    <script src="settings-manager.js"></script>
     <script>
         (() => {
-            const storedTheme = localStorage.getItem('app_theme') || localStorage.getItem('theme') || 'light';
-            const themeClass = storedTheme === 'dark' || storedTheme === 'light' ? `${storedTheme}-theme` : storedTheme;
-            document.body.className = themeClass;
-            document.documentElement.dataset.theme = storedTheme;
+            window.settingsManager = new SettingsManager();
+            window.settingsManager.initAppearance();
         })();
     </script>
 
