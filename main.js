@@ -44,7 +44,7 @@ const i18n = {
         toolkit_hub: "Toolkit Hub", spiritual_center: "Your Spiritual Control Center", start_journey: "Start Your Journey",
         explore: "Explore", hero_tagline: "Find Peace. Stay Connected.", hero_title: "Your Journey to Peace and Purpose",
         hero_desc: "Salafiyah is your all-in-one companion for a stronger connection with Allah — guiding your intention, actions, and reflection.",
-        focus_mode_title: "Focus Mode", focus_mode_desc: "Undistracted Spiritual Journey", exit_focus: "Exit Focus Mode",
+        
         jummah_mubarak: "Jummah Mubarak", jummah_kahf_reminder: "Don't forget to read Surah Al-Kahf and send Salawat upon the Prophet (PBUH).",
         download_mushaf: "Download Mushaf", downloading: "Downloading...", downloaded: "Offline Ready", download_offline: "Download for Offline Access",
         read_kahf: "Read Kahf", verse_of_day: "Verse of the Day", recitation_phrase: "Recitation Phrase",
@@ -68,7 +68,7 @@ const i18n = {
         toolkit_hub: "مركز الأدوات", spiritual_center: "مركز التحكم الروحي الخاص بك", start_journey: "ابدأ رحلتك",
         explore: "استكشف", hero_tagline: "جد السلام. ابق متصلاً.", hero_title: "رحلتك نحو السلام والهدف",
         hero_desc: "السلفية هي رفيقك الشامل لتعزيز صلتك بالله — توجه نيتك وأعمالك وتأملك.",
-        focus_mode_title: "وضع التركيز", focus_mode_desc: "رحلة روحية بلا مشتتات", exit_focus: "الخروج من وضع التركيز",
+        
         jummah_mubarak: "جمعة مباركة", jummah_kahf_reminder: "لا تنسَ قراءة سورة الكهف والصلاة على النبي ﷺ.",
         read_kahf: "اقرأ الكهف", verse_of_day: "آية اليوم", recitation_phrase: "جملة الذكر",
         prev_surah: "السابقة", next_surah: "التالية"
@@ -91,7 +91,7 @@ const i18n = {
         toolkit_hub: "ٹول کٹ ہب", spiritual_center: "آپ کا روحانی کنٹرول سینٹر", start_journey: "اپنا سفر شروع کریں",
         explore: "دریافت کریں", hero_tagline: "سکون پائیں، جڑے رہیں۔", hero_title: "سکون اور مقصد کی طرف آپ کا سفر",
         hero_desc: "سلفیہ اللہ کے ساتھ آپ کے تعلق کو مضبوط بنانے کے لیے آپ کا ہمہ گیر ساتھی ہے — جو آپ کی نیت، اعمال اور فکر کی رہنمائی کرتا ہے۔",
-        focus_mode_title: "فوکس موڈ", focus_mode_desc: "بغیر کسی خلل کے روحانی سفر", exit_focus: "فوکس موڈ سے باہر نکلیں",
+        
         jummah_mubarak: "جمعہ مبارک", jummah_kahf_reminder: "سورة الكهف پڑھنا اور نبی کریم ﷺ پر درود بھیجنا نہ بھولیں۔",
         read_kahf: "الكهف پڑھیں", verse_of_day: "آج کی آیت", recitation_phrase: "ذکر کی تسبیح",
         prev_surah: "پچھلا", next_surah: "اگلا"
@@ -247,7 +247,7 @@ const getInitialState = () => {
             tajweedEnabled: localStorage.getItem('tajweed_enabled') === 'true',
             accentColor: localStorage.getItem('accent_color') || '#006994',
             uiDensity: localStorage.getItem('ui_density') || 'regular',
-            focusMode: localStorage.getItem('focus_mode') === 'true',
+            
             hijriOffset: localStorage.getItem('hijri_offset') !== null ? parseInt(localStorage.getItem('hijri_offset')) : 1,
             hapticStyle: localStorage.getItem('haptic_style') || 'soft',
             currentTheme: localStorage.getItem('app_theme') || localStorage.getItem('theme') || 'light',
@@ -311,7 +311,7 @@ state.settings = {
     tajweedEnabled: localStorage.getItem('tajweed_enabled') === 'true',
     accentColor: localStorage.getItem('accent_color') || '#006994',
     uiDensity: localStorage.getItem('ui_density') || 'regular',
-    focusMode: localStorage.getItem('focus_mode') === 'true',
+    
     hapticStyle: localStorage.getItem('haptic_style') || 'soft',
     currentTheme: localStorage.getItem('app_theme') || localStorage.getItem('theme') || 'light',
     animationIntensity: parseFloat(localStorage.getItem('anim_intensity')) || 1,
@@ -928,7 +928,7 @@ function initTheme() {
         document.body.classList.remove('light-theme', 'dark-theme');
         document.body.classList.add((savedTheme === 'dark' ? 'dark' : 'light') + '-theme');
     }
-    if (state.settings.focusMode) document.body.classList.add('focus-mode');
+    
     applyRTL(state.settings.uiLanguage);
 }
 
@@ -4542,13 +4542,7 @@ async function renderSettings() {
                 </div>
                 <input type="checkbox" id="set-ramadan" ${state.settings.ramadanMode ? 'checked' : ''} onchange="window.app.saveSettings()">
             </div>
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem;">
-                <div>
-                    <h4 style="margin: 0; color: var(--accent-emerald);">Minimalist Focus Mode</h4>
-                    <p style="font-size: 0.75rem; color: var(--text-secondary);">Hide distractions, stats, and extra buttons</p>
-                </div>
-                <input type="checkbox" id="set-focus" ${state.settings.focusMode ? 'checked' : ''} onchange="window.app.saveSettings()">
-            </div>
+
             <div class="form-group" style="margin-top: 1rem;">
                 <label>Haptic Feedback Style</label>
                 <select id="set-haptic" onchange="window.app.saveSettings()" style="width: 100%; height: 45px; background: var(--glass-bg); border: 1px solid var(--glass-border); color: var(--text-primary); border-radius: 12px; padding: 0 1rem; outline: none;">
@@ -4965,19 +4959,10 @@ function saveSettings() {
     const bgType = document.getElementById('set-bg-type')?.value;
     const bgUrl = document.getElementById('set-bg-url')?.value;
 
-    const focusEl = document.getElementById('set-focus');
     const hapticStyle = document.getElementById('set-haptic')?.value;
-
-    if (focusEl) {
-        state.settings.focusMode = focusEl.checked;
-        state.settings.hapticStyle = hapticStyle || state.settings.hapticStyle;
-
-        localStorage.setItem('focus_mode', state.settings.focusMode);
+    if (hapticStyle) {
+        state.settings.hapticStyle = hapticStyle;
         localStorage.setItem('haptic_style', state.settings.hapticStyle);
-
-        if (state.settings.focusMode) document.body.classList.add('focus-mode');
-        else document.body.classList.remove('focus-mode');
-
         if (state.settings.hapticStyle !== 'none') vibrate('soft'); // Test vibration
     }
 
@@ -6735,7 +6720,7 @@ function drawRecordingWaveform(dataArray, maxAmplitude) {
 applyBackground();
 
 if (state.settings.ramadanMode) document.body.classList.add('ramadan-mode');
-if (state.settings.focusMode) document.body.classList.add('focus-mode');
+
 if (new Date().getDay() === 5) document.body.classList.add('jummah-mode');
 
 // Initialize legacy UI Theme only when no premium theme is active.

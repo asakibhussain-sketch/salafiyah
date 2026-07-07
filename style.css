@@ -2637,34 +2637,15 @@ body.ramadan-mode .nav-item.active {
 }
 
 /* ===== FOCUS MODE ===== */
-body.focus-mode .desktop-sidebar,
-body.focus-mode header .profile-circle,
-body.focus-mode .dashboard-stats,
-body.focus-mode .inspiration-card,
-body.focus-mode .toolkit-grid,
-body.focus-mode .bottom-nav .nav-item:not([onclick*="quran"]):not([onclick*="tasbih"]):not([onclick*="books"]):not([onclick*="dashboard"]) {
-    display: none !important;
-}
 
-body.focus-mode .bottom-nav {
-    bottom: 2rem;
-    padding: 0.6rem 1.5rem;
-}
 
-body.focus-mode .glass-card:hover {
-    transform: none;
-    /* Reduce movement in focus mode */
-}
 
-body.focus-mode main {
-    padding-top: 4rem;
-    max-width: 800px;
-    margin: 0 auto;
-}
 
-body.focus-mode #app {
-    background: var(--bg-cream);
-}
+
+
+
+
+
 
 /* ===== UI THEMES ===== */
 body.theme-serenity {
