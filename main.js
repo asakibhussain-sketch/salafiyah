@@ -3977,11 +3977,11 @@ function getOfflineHijri(date = new Date()) {
     };
 }
 
-async function fetchPrayerTimes() {
+async function fetchPrayerTimes(force = false) {
     // If the prayer engine is available, use it for a coordinate-based fetch
     if (window.prayerEngine) {
         try {
-            await window.prayerEngine.refresh();
+            await window.prayerEngine.refresh(force);
             updateDate();
             if (state.settings.dynamicPrayerTheme && typeof refreshPrayerTheme === 'function') refreshPrayerTheme();
             if (state.currentScreen === 'dashboard') renderDashboard();
@@ -4530,7 +4530,7 @@ async function renderSettings() {
                 </select>
             </div>
             
-            <button class="btn-primary" style="margin-top: 1rem; width: 100%;" onclick="window.app.saveSettings()">Save Hijri Settings</button>
+            <button class="btn-primary" style="margin-top: 1rem; width: 100%;" onclick="window.app.saveSettings(this)">Save Hijri Settings</button>
         </div>
 
         <div class="glass-card">
@@ -4584,7 +4584,7 @@ async function renderSettings() {
                 <input type="checkbox" id="set-format24" ${state.settings.format24 ? 'checked' : ''}>
                 <label for="set-format24" style="font-size: 0.9rem;">Use 24-hour time format</label>
             </div>
-            <button class="btn-primary" style="margin-top: 2rem;" onclick="window.app.saveSettings()">Save Preferences</button>
+            <button class="btn-primary" style="margin-top: 2rem;" onclick="window.app.saveSettings(this)">Save Preferences</button>
         </div>
 
         <div class="glass-card">
@@ -4915,7 +4915,7 @@ async function requestCompassPermission() {
 function THREE_RADIANS(deg) { return deg * (Math.PI / 180); }
 function THREE_DEGREES(rad) { return rad * (180 / Math.PI); }
 
-function saveSettings() {
+function saveSettings(btn = null) {
     const methodEl = document.getElementById('set-method');
     const format24El = document.getElementById('set-format24');
     const ramadanModeEl = document.getElementById('set-ramadan');
@@ -4980,13 +4980,19 @@ function saveSettings() {
     }
 
     if (refetchRequired) {
-        // Clear caches and force refetch
-        if (window.prayerEngine) {
-            localStorage.removeItem('salafiyah_timings_' + window.prayerEngine.todayKey());
-        }
-        fetchPrayerTimes();
+        fetchPrayerTimes(true);
     } else {
-        fetchPrayerTimes();
+        fetchPrayerTimes(false);
+    }
+
+    if (btn && btn.tagName === 'BUTTON') {
+        const originalText = btn.textContent;
+        btn.textContent = '✓ Saved!';
+        btn.style.backgroundColor = 'var(--accent-emerald)';
+        setTimeout(() => {
+            btn.textContent = originalText;
+            btn.style.backgroundColor = '';
+        }, 2000);
     }
 }
 
