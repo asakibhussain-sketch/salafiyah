@@ -1,6 +1,6 @@
-# Salafiyah — Find Peace. Stay Connected. 🕌
+# Hikmah — WISDOM FOR EVERY STEP 🕌
 
-Salafiyah is a modern, responsive, and feature-rich Progressive Web Application (PWA) designed to be your spiritual companion. Built as a Single Page Application (SPA), it provides users with tools to read the Quran, track prayers, count Dhikr with AI guidance, study authentic Duas, and consult an AI Imam assistant.
+Hikmah is a modern, responsive, and feature-rich Progressive Web Application (PWA) designed to be your spiritual companion. Built as a Single Page Application (SPA), it provides users with tools to read the Quran, track prayers, count Dhikr with AI guidance, study authentic Duas, and consult an AI Imam assistant.
 
 ---
 

@@ -1,8 +1,8 @@
 /**
- * Salafiyah - Muslim Daily Companion
+ * Hikmah - Muslim Daily Companion
  * Main UI Logic & State Management
  */
-console.log('Salafiyah v53 loaded - Friday check & Offline Assets active');
+console.log('Hikmah v53 loaded - Friday check & Offline Assets active');
 
 /// --- Global Error Boundary ---
 window.onerror = function (msg, url, line, col, error) {
@@ -28,22 +28,22 @@ window.onerror = function (msg, url, line, col, error) {
 const i18n = {
     en: {
         nav_home: "Home", nav_tasbih: "Tasbih", nav_quran: "Quran", nav_ask: "Ask Imam", nav_tracker: "Tracker",
-        dashboard: "Salafiyah", tasbih: "Tasbih", quran: "Quran", books: "Books", tracker: "Tracker", qibla: "Qibla Compass", settings: "Settings", mushaf: "Sacred Mushaf", learn: "Learn", nearby: "Nearby",
+        dashboard: "Hikmah", tasbih: "Tasbih", quran: "Quran", books: "Books", tracker: "Tracker", qibla: "Qibla Compass", settings: "Settings", mushaf: "Sacred Mushaf", learn: "Learn", nearby: "Nearby",
         daily_goal: "Daily Spiritual Goal", spiritual_progress: "Spiritual Progress", tasks_completed: "tasks completed", daily_inspiration: "Daily Inspiration", prayer_times: "Prayer Times",
         recent_tasbih: "Recent Tasbih", count: "Count", features: "Features",
         salah_tracker: "Salah Tracker", fajr: "Fajr", dhuhr: "Dhuhr", asr: "Asr", maghrib: "Maghrib", isha: "Isha",
         daily_habits: "Daily Habits", morning_adhkar: "Morning Adhkar", evening_adhkar: "Evening Adhkar", quran_read: "Quran Recitation",
         location_settings: "Location Settings", detect_location: "Detect My Location", city: "City", country: "Country (Code)", update_location: "Update Location",
-        app_prefs: "Salafiyah Preferences", ramadan_mode: "Ramadan Mode", prayer_alarms: "Prayer Alarms", calc_method: "Calculation Method", use_24h: "Use 24-hour time format", save_prefs: "Save Preferences",
-        test_adhan: "Test Adhan Sound", back: "Back", back_to_dashboard: "Back to Salafiyah", close: "Close", play_all: "Play All Names",
-        select_language: "Select Language", ui_language: "Salafiyah Interface Language", quran_trans_lang: "Quran Translation",
+        app_prefs: "Hikmah Preferences", ramadan_mode: "Ramadan Mode", prayer_alarms: "Prayer Alarms", calc_method: "Calculation Method", use_24h: "Use 24-hour time format", save_prefs: "Save Preferences",
+        test_adhan: "Test Adhan Sound", back: "Back", back_to_dashboard: "Back to Hikmah", close: "Close", play_all: "Play All Names",
+        select_language: "Select Language", ui_language: "Hikmah Interface Language", quran_trans_lang: "Quran Translation",
         daily_essentials: "Daily Essentials", explore_learn: "Explore & Learn", preferences: "Preferences",
         toolkit: "Spiritual Toolkit", qaza: "Qaza Tracker", zakat: "Zakat Calculator", quiz: "Islamic Quiz", bookmarks: "Bookmarks",
         search_quran: "Search Quran", ramadan: "Ramadan Mode", fasting_tracker: "Fasting Tracker", taraweeh: "Taraweeh Tracker",
         goals: "Spiritual Goals", custom: "Custom", recommended: "Recommended", shared: "Shared Successfully",
         toolkit_hub: "Toolkit Hub", spiritual_center: "Your Spiritual Control Center", start_journey: "Start Your Journey",
         explore: "Explore", hero_tagline: "Find Peace. Stay Connected.", hero_title: "Your Journey to Peace and Purpose",
-        hero_desc: "Salafiyah is your all-in-one companion for a stronger connection with Allah — guiding your intention, actions, and reflection.",
+        hero_desc: "Hikmah is your intelligent Islamic companion designed to help you strengthen your connection with Allah through prayer, Qur'an, remembrance, reflection, and spiritual growth.",
         
         jummah_mubarak: "Jummah Mubarak", jummah_kahf_reminder: "Don't forget to read Surah Al-Kahf and send Salawat upon the Prophet (PBUH).",
         download_mushaf: "Download Mushaf", downloading: "Downloading...", downloaded: "Offline Ready", download_offline: "Download for Offline Access",
@@ -98,7 +98,7 @@ const i18n = {
     },
     id: {
         nav_home: "Beranda", nav_tasbih: "Tasbih", nav_quran: "Quran", nav_ask: "Tanya Imam", nav_tracker: "Pelacak",
-        dashboard: "Salafiyah", tasbih: "Tasbih", quran: "Al-Quran", books: "Buku", tracker: "Pelacak Harian", qibla: "Kompas Kiblat", settings: "Pengaturan", mushaf: "Mushaf", learn: "Belajar", nearby: "Sekitar",
+        dashboard: "Hikmah", tasbih: "Tasbih", quran: "Al-Quran", books: "Buku", tracker: "Pelacak Harian", qibla: "Kompas Kiblat", settings: "Pengaturan", mushaf: "Mushaf", learn: "Belajar", nearby: "Sekitar",
         daily_goal: "Target Spiritual Harian", spiritual_progress: "Kemajuan Spiritual", tasks_completed: "tugas selesai", daily_inspiration: "Inspirasi Hari Ini", prayer_times: "Waktu Shalat",
         recent_tasbih: "Tasbih Terakhir", count: "Jumlah", features: "Fitur",
         salah_tracker: "Pelacak Shalat", fajr: "Fajr", dhuhr: "Dzuhur", asr: "Ashar", maghrib: "Maghrib", isha: "Isya",
@@ -117,7 +117,7 @@ const i18n = {
     },
     fr: {
         nav_home: "Accueil", nav_tasbih: "Tasbih", nav_quran: "Coran", nav_ask: "Demander à l'Imam", nav_tracker: "Suivi",
-        dashboard: "Salafiyah", tasbih: "Tasbih", quran: "Le Coran", books: "Livres", tracker: "Suivi Quotidien", qibla: "Boussole Qibla", settings: "Paramètres", mushaf: "Le Mushaf", learn: "Apprendre", nearby: "À Proximité",
+        dashboard: "Hikmah", tasbih: "Tasbih", quran: "Le Coran", books: "Livres", tracker: "Suivi Quotidien", qibla: "Boussole Qibla", settings: "Paramètres", mushaf: "Le Mushaf", learn: "Apprendre", nearby: "À Proximité",
         daily_goal: "Objectif Spirituel Quotidien", spiritual_progress: "Progrès Spirituel", tasks_completed: "tâches terminées", daily_inspiration: "Inspiration du Jour", prayer_times: "Heures de Prière",
         recent_tasbih: "Tasbih Récent", count: "Compte", features: "Fonctionnalités",
         salah_tracker: "Suivi des Prières", fajr: "Fajr", dhuhr: "Dhuhr", asr: "Asr", maghrib: "Maghrib", isha: "Isha",
@@ -1639,7 +1639,7 @@ async function renderDashboard() {
                     <div style="max-width: 600px; position: relative; z-index: 1;">
                         <span style="color: var(--accent-gold); font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.15em; margin-bottom: 0.75rem; display: block;">Find Peace. Stay Connected.</span>
                         <h1 class="serif" style="font-size: clamp(1.75rem, 6vw, 3.5rem); color: var(--text-primary); margin-bottom: 1.25rem; line-height: 1.1; font-weight: 900;">Your Journey to<br>Peace and Purpose</h1>
-                        <p style="color: var(--text-secondary); font-size: clamp(0.85rem, 2vw, 1rem); line-height: 1.6; margin-bottom: 2.5rem; opacity: 0.9;">Salafiyah is your all-in-one companion for a stronger connection with Allah — guiding your intention, actions, and reflection.</p>
+                        <p style="color: var(--text-secondary); font-size: clamp(0.85rem, 2vw, 1rem); line-height: 1.6; margin-bottom: 2.5rem; opacity: 0.9;">Hikmah is your intelligent Islamic companion designed to help you strengthen your connection with Allah through prayer, Qur'an, remembrance, reflection, and spiritual growth.</p>
                         
                         <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
                             <button class="btn-primary" onclick="window.app.loadScreen('toolkit')" style="padding: 0.9rem 2rem; border-radius: 14px; font-weight: 700; min-width: 160px;">Start Your Journey</button>
@@ -2975,7 +2975,7 @@ function renderToolkitHub() {
             </div>
             
             <div style="margin-top: 4rem; text-align: center; padding-bottom: 2rem;">
-                <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.4;">Salafiyah Redesign 2.0</div>
+                <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.4;">Hikmah Redesign 2.0</div>
             </div>
         </div>
     `;
@@ -4301,7 +4301,7 @@ function triggerPrayerAlarm(name) {
     // Browser notification
     if (Notification.permission === "granted") {
         try {
-            new Notification(`Salafiyah - Time for ${name}`, {
+            new Notification(`Hikmah - Time for ${name}`, {
                 body: `It is now time for ${name} prayer in ${state.location.city}.`,
                 icon: '/favicon.ico',
                 badge: '/favicon.ico',
@@ -5168,10 +5168,10 @@ function exportSyncKey() {
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'salafiyah-sync-key.txt';
+            a.download = 'hikmah-sync-key.txt';
             a.click();
             URL.revokeObjectURL(url);
-            alert('Sync Key downloaded as salafiyah-sync-key.txt — open it on your other device and use Import Key.');
+            alert('Sync Key downloaded as hikmah-sync-key.txt — open it on your other device and use Import Key.');
         };
 
         tryClipboard();
@@ -5665,9 +5665,9 @@ function toggleAboutModal() {
             <!-- Logo & Title -->
             <div style="display: flex; flex-direction: column; align-items: center; text-align: center; margin-bottom: 2rem; margin-top: 0.5rem;">
                 <div style="width: 72px; height: 72px; background: none; border-radius: 50%; padding: 4px; box-shadow: 0 8px 30px rgba(0,0,0,0.08); margin-bottom: 1rem;">
-                    <img src="icon.png" alt="Salafiyah Logo" style="width: 100%; height: 100%; object-fit: contain;">
+                    <img src="icon.png" alt="Hikmah Logo" style="width: 100%; height: 100%; object-fit: contain;">
                 </div>
-                <h2 class="serif" style="color: var(--primary-blue); font-size: 1.8rem; margin: 0;">Salafiyah</h2>
+                <h2 class="serif" style="color: var(--primary-blue); font-size: 1.8rem; margin: 0;">Hikmah</h2>
                 <div style="font-size: 0.72rem; color: var(--accent-primary); font-weight: 800; letter-spacing: 0.15em; text-transform: uppercase; margin-top: 0.2rem;">Spiritual Companion</div>
             </div>
 
@@ -6296,8 +6296,8 @@ function renderBookmarks() {
 
 async function shareContent(title, text) {
     const shareData = {
-        title: 'Salafiyah - Spiritual Companion',
-        text: `${title}\n\n${text}\n\nShared from Salafiyah App`,
+        title: 'Hikmah - Spiritual Companion',
+        text: `${title}\n\n${text}\n\nShared from Hikmah App`,
         url: window.location.href
     };
 

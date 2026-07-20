@@ -12,7 +12,7 @@ def start_tunnel():
     process = subprocess.Popen(["npx", "localtunnel", "--port", "8000"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, shell=True)
     
     print("\n" + "="*50)
-    print("SALAFIYAH IS LIVE VIA LOCALTUNNEL!")
+    print("HIKMAH IS LIVE VIA LOCALTUNNEL!")
     print("="*50 + "\n")
     
     for line in process.stdout:

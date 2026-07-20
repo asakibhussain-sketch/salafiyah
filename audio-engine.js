@@ -1,5 +1,5 @@
 /**
- * Salafiyah AI Recitation Intelligence Engine™
+ * Hikmah AI Recitation Intelligence Engine™
  * Professional Audio Enhancement & Preprocessing Engine
  */
 

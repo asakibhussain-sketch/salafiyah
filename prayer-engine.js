@@ -1,5 +1,5 @@
 /**
- * Salafiyah Prayer Engine v2.0
+ * Hikmah Prayer Engine v2.0
  * Automatic, real-time prayer time system
  * - Coordinate-based GPS detection
  * - Live countdown (1-second local timer, zero API calls per second)

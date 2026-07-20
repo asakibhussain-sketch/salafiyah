@@ -1,5 +1,5 @@
 /**
- * Salafiyah Premium Theme System
+ * Hikmah Premium Theme System
  * Dynamic themes, appearance controls, ambient layers, widget polish, and low-cost interactions.
  */
 

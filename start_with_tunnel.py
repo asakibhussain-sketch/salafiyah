@@ -41,7 +41,7 @@ def start_tunnel():
         try:
             public_url = ngrok.connect(8000).public_url
             print("\n" + "="*50)
-            print("SALAFIYAH IS LIVE!")
+            print("HIKMAH IS LIVE!")
             print(f"Public URL: {public_url}")
             print("Click the link to access the app.")
             print("="*50 + "\n")

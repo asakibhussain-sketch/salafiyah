@@ -120,7 +120,7 @@ class AskRequest(BaseModel):
     messages: list
 
 
-app = FastAPI(title="Salafiyah API")
+app = FastAPI(title="Hikmah API")
 
 # Add CORS middleware
 app.add_middleware(
@@ -173,7 +173,7 @@ async def ask_imam(req: AskRequest):
                 json={
                     "model": "llama-3.3-70b-versatile",
                     "messages": [
-                        {"role": "system", "content": "You are a knowledgeable and compassionate Imam assistant for the Salafiyah app. Answer questions about Islam, Salah, Duas, and general religious guidance with wisdom and according to authentic sources. Keep responses concise and helpful for a mobile app user."},
+                        {"role": "system", "content": "You are a knowledgeable and compassionate Imam assistant for the Hikmah app. Answer questions about Islam, Salah, Duas, and general religious guidance with wisdom and according to authentic sources. Keep responses concise and helpful for a mobile app user."},
                         *req.messages
                     ],
                     "temperature": 0.7,
@@ -304,7 +304,7 @@ async def serve_static(path: str):
     return JSONResponse(status_code=404, content={"detail": "Not found"})
 
 if __name__ == "__main__":
-    print("Salafiyah Companion Backend is active.")
+    print("Hikmah Companion Backend is active.")
     print("Local URL: http://localhost:8000")
     print("External Access: http://[YOUR-IP-ADDRESS]:8000")
     # Using 0.0.0.0 to allow mobile devices on the same network to connect
