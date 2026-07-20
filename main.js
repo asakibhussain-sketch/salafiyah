@@ -42,7 +42,7 @@ const i18n = {
         search_quran: "Search Quran", ramadan: "Ramadan Mode", fasting_tracker: "Fasting Tracker", taraweeh: "Taraweeh Tracker",
         goals: "Spiritual Goals", custom: "Custom", recommended: "Recommended", shared: "Shared Successfully",
         toolkit_hub: "Toolkit Hub", spiritual_center: "Your Spiritual Control Center", start_journey: "Start Your Journey",
-        explore: "Explore", hero_tagline: "Find Peace. Stay Connected.", hero_title: "Your Journey to Peace and Purpose",
+        explore: "Explore", hero_tagline: "WISDOM FOR EVERY STEP", hero_title: "Your Journey to Peace and Purpose",
         hero_desc: "Hikmah is your intelligent Islamic companion designed to help you strengthen your connection with Allah through prayer, Qur'an, remembrance, reflection, and spiritual growth.",
         
         jummah_mubarak: "Jummah Mubarak", jummah_kahf_reminder: "Don't forget to read Surah Al-Kahf and send Salawat upon the Prophet (PBUH).",
@@ -1637,7 +1637,7 @@ async function renderDashboard() {
                     ` : ''}
 
                     <div style="max-width: 600px; position: relative; z-index: 1;">
-                        <span style="color: var(--accent-gold); font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.15em; margin-bottom: 0.75rem; display: block;">Find Peace. Stay Connected.</span>
+                        <span style="color: var(--accent-gold); font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.15em; margin-bottom: 0.75rem; display: block;">WISDOM FOR EVERY STEP</span>
                         <h1 class="serif" style="font-size: clamp(1.75rem, 6vw, 3.5rem); color: var(--text-primary); margin-bottom: 1.25rem; line-height: 1.1; font-weight: 900;">Your Journey to<br>Peace and Purpose</h1>
                         <p style="color: var(--text-secondary); font-size: clamp(0.85rem, 2vw, 1rem); line-height: 1.6; margin-bottom: 2.5rem; opacity: 0.9;">Hikmah is your intelligent Islamic companion designed to help you strengthen your connection with Allah through prayer, Qur'an, remembrance, reflection, and spiritual growth.</p>
                         
