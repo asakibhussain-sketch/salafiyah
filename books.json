@@ -1,0 +1,425 @@
+[
+  {
+    "id": "kitab-at-tawheed",
+    "title": "Kitab at-Tawheed",
+    "author": "Shaykh al-Islam Muhammad ibn Abd al-Wahhab",
+    "description": "A foundational text on Islamic Monotheism, detailing the oneness of Allah and the nullifiers of faith.",
+    "category": "Aqeedah",
+    "icon": "📖",
+    "url": "https://thesalafiyahh.com/?type=book&id=1"
+  },
+  {
+    "id": "al-aqeedah-al-wasatiyyah",
+    "title": "Al-Aqeedah Al-Wasatiyyah",
+    "author": "Shaykh al-Islam Ibn Taymiyyah",
+    "description": "A classic treatise on the core beliefs of Ahlus Sunnah wal Jama'ah — the middle, balanced creed.",
+    "category": "Aqeedah",
+    "icon": "📜",
+    "url": "https://thesalafiyahh.com/?type=book&id=2"
+  },
+  {
+    "id": "three-fundamental-principles",
+    "title": "Three Fundamental Principles",
+    "author": "Shaykh al-Islam Muhammad ibn Abd al-Wahhab",
+    "description": "Al-Usool Ath-Thalaathah — the three most essential questions every Muslim must know.",
+    "category": "Aqeedah",
+    "icon": "📋",
+    "url": "https://thesalafiyahh.com/?type=book&id=3"
+  },
+  {
+    "id": "sharh-al-aqeedat-il-wasitiyyah",
+    "title": "Sharh Al-Aqeedat-il-Wasitiyyah",
+    "author": "Shaykh Muhammad ibn Salih al-Uthaymeen",
+    "description": "A comprehensive explanation of Ibn Taymiyyah's Wasitiyyah by one of the greatest scholars of our time.",
+    "category": "Aqeedah",
+    "icon": "📗",
+    "url": "https://thesalafiyahh.com/?type=book&id=4"
+  },
+  {
+    "id": "four-rules",
+    "title": "The Four Rules",
+    "author": "Shaykh al-Islam Muhammad ibn Abd al-Wahhab",
+    "description": "Al-Qawa'id Al-Arba'a — a brief but powerful work on distinguishing true Tawheed from polytheism.",
+    "category": "Aqeedah",
+    "icon": "🔑",
+    "url": "https://thesalafiyahh.com/?type=book&id=5"
+  },
+  {
+    "id": "kashf-al-shubuhat",
+    "title": "Removal of Doubts (Kashf al-Shubuhat)",
+    "author": "Shaykh al-Islam Muhammad ibn Abd al-Wahhab",
+    "description": "Removal of Doubts — addressing and refuting misconceptions and arguments used to justify shirk.",
+    "category": "Aqeedah",
+    "icon": "🛡️",
+    "url": "https://thesalafiyahh.com/?type=book&id=6"
+  },
+  {
+    "id": "creed-pious-predecessors",
+    "title": "Creed of the Pious Predecessors & People of Hadith",
+    "author": "Imam Abu Uthman al-Sabuni",
+    "description": "A classical text outlining the beliefs of the early righteous Muslims and the scholars of hadith.",
+    "category": "Aqeedah",
+    "icon": "📿",
+    "url": "https://thesalafiyahh.com/?type=book&id=7"
+  },
+  {
+    "id": "guide-sound-creed",
+    "title": "Guide to Sound Creed",
+    "author": "Shaykh Salih al-Fawzan",
+    "description": "A comprehensive guide to the correct Islamic belief, covering all major topics of creed.",
+    "category": "Aqeedah",
+    "icon": "🧭",
+    "url": "https://thesalafiyahh.com/?type=book&id=8"
+  },
+  {
+    "id": "kitab-al-iman",
+    "title": "The Book of Faith (Kitab al-Iman)",
+    "author": "Shaykh al-Islam Ibn Taymiyyah",
+    "description": "A detailed discussion on the nature, components, and levels of faith (Iman) in Islam.",
+    "category": "Aqeedah",
+    "icon": "💎",
+    "url": "https://thesalafiyahh.com/?type=book&id=9"
+  },
+  {
+    "id": "sharh-sunnah",
+    "title": "Sharh Sunnah",
+    "author": "Imam al-Barbahari",
+    "description": "An explanation of the Sunnah covering the fundamental beliefs and practices of Ahlus Sunnah.",
+    "category": "Aqeedah",
+    "icon": "✨",
+    "url": "https://thesalafiyahh.com/?type=book&id=10"
+  },
+  {
+    "id": "al-aqeedah-al-tahawiyyah",
+    "title": "Al-Aqeedah Al-Tahawiyyah",
+    "author": "Imam al-Tahawi",
+    "description": "One of the most widely studied texts on Islamic creed, representing the beliefs of Ahlus Sunnah.",
+    "category": "Aqeedah",
+    "icon": "⚜️",
+    "url": "https://thesalafiyahh.com/?type=book&id=11"
+  },
+  {
+    "id": "methodology-saved-sect",
+    "title": "The Methodology of the Saved Sect",
+    "author": "Shaykh Muhammad bin Jamil Zeno",
+    "description": "Defining the beliefs and methodology of the Saved Sect as described in the prophetic hadith.",
+    "category": "Aqeedah",
+    "icon": "🏷️",
+    "url": "https://thesalafiyahh.com/?type=book&id=12"
+  },
+  {
+    "id": "usool-al-iman",
+    "title": "Fundamentals of Faith (Usool al-Iman)",
+    "author": "Shaykh al-Islam Muhammad ibn Abd al-Wahhab",
+    "description": "An explanation of the six pillars of Iman with evidence from the Quran and Sunnah.",
+    "category": "Aqeedah",
+    "icon": "🌟",
+    "url": "https://thesalafiyahh.com/?type=book&id=13"
+  },
+  {
+    "id": "tawhid-core-of-islam",
+    "title": "Tawhid: The Core of Islam",
+    "author": "Curated by The Salafiyahh",
+    "description": "A curated collection explaining the centrality of Tawhid (Monotheism) in every aspect of a Muslim's life.",
+    "category": "Aqeedah",
+    "icon": "🌙",
+    "url": "https://thesalafiyahh.com/?type=book&id=14"
+  },
+  {
+    "id": "way-of-the-salaf",
+    "title": "The Way of the Salaf",
+    "author": "Curated by The Salafiyahh",
+    "description": "A curated study on the methodology of the righteous early Muslim generations and how to follow their path.",
+    "category": "Aqeedah",
+    "icon": "🛤️",
+    "url": "https://thesalafiyahh.com/?type=book&id=15"
+  },
+  {
+    "id": "intercession-of-prophet",
+    "title": "Intercession of the Prophet ﷺ",
+    "author": "Shaykh Muhammad ibn Salih al-Uthaymeen",
+    "description": "A scholarly discussion on the types of prophetic intercession and correct belief regarding it.",
+    "category": "Aqeedah",
+    "icon": "🤲",
+    "url": "https://thesalafiyahh.com/?type=book&id=16"
+  },
+  {
+    "id": "tafsir-ibn-kathir",
+    "title": "Tafsir Ibn Kathir",
+    "author": "Hafiz Ibn Kathir",
+    "description": "One of the most authoritative and widely used Tafsir works, explaining the Quran with Quran and hadith.",
+    "category": "Tafsir & Quran",
+    "icon": "📖",
+    "url": "https://thesalafiyahh.com/?type=book&id=17"
+  },
+  {
+    "id": "tafsir-as-sadi",
+    "title": "Tafsir as-Sa'di",
+    "author": "Abdur-Rahman Nasir as-Sa'di",
+    "description": "A clear and comprehensive Quran commentary known for its accessibility and depth of understanding.",
+    "category": "Tafsir & Quran",
+    "icon": "📚",
+    "url": "https://thesalafiyahh.com/?type=book&id=18"
+  },
+  {
+    "id": "help-yourself-reading-quran",
+    "title": "Help Yourself in Reading Quran",
+    "author": "Qari Abdussalam",
+    "description": "A step-by-step guide to learning to read the Arabic Quran from scratch.",
+    "category": "Tafsir & Quran",
+    "icon": "✏️",
+    "url": "https://thesalafiyahh.com/?type=book&id=19"
+  },
+  {
+    "id": "sciences-of-quran",
+    "title": "The Sciences of the Quran",
+    "author": "Abu Ammaar Yasir Qadhi",
+    "description": "An introduction to the Islamic disciplines that relate to understanding the Quran (Ulum al-Quran).",
+    "category": "Tafsir & Quran",
+    "icon": "🔬",
+    "url": "https://thesalafiyahh.com/?type=book&id=20"
+  },
+  {
+    "id": "principles-of-tafsir",
+    "title": "The Principles of Tafsir",
+    "author": "Shaykh Muhammad ibn Salih al-Uthaymeen",
+    "description": "Usool fi Tafseer — the essential rules and foundations for correctly interpreting the Quran.",
+    "category": "Tafsir & Quran",
+    "icon": "📐",
+    "url": "https://thesalafiyahh.com/?type=book&id=21"
+  },
+  {
+    "id": "how-to-approach-understand-quran",
+    "title": "How to Approach and Understand Quran",
+    "author": "Jamaal al-Din M. Zarabozo",
+    "description": "A practical guide on the correct methodology for approaching and comprehending the Quran.",
+    "category": "Tafsir & Quran",
+    "icon": "🗺️",
+    "url": "https://thesalafiyahh.com/?type=book&id=22"
+  },
+  {
+    "id": "causes-memorisation-quran",
+    "title": "Causes that Aid in the Memorisation of Quran",
+    "author": "Shaykh Mahmood al-Misri",
+    "description": "Practical and spiritual causes that help a believer in memorising and retaining the Holy Quran.",
+    "category": "Tafsir & Quran",
+    "icon": "🧠",
+    "url": "https://thesalafiyahh.com/?type=book&id=23"
+  },
+  {
+    "id": "atlas-of-the-quran",
+    "title": "Atlas of the Quran",
+    "author": "Dr. Shawqi Abu Khalil",
+    "description": "A beautifully illustrated atlas covering people, places, and history mentioned in the Quran.",
+    "category": "Tafsir & Quran",
+    "icon": "🗾",
+    "url": "https://thesalafiyahh.com/?type=book&id=24"
+  },
+  {
+    "id": "relief-from-distress",
+    "title": "The Relief from Distress",
+    "author": "Shaykh Ul-Islam Ibn Taymiyyah",
+    "description": "Miftah Dar as-Sa'adah — Dua Yunus and its power as a cure for distress and hardship.",
+    "category": "Tafsir & Quran",
+    "icon": "🌊",
+    "url": "https://thesalafiyahh.com/?type=book&id=25"
+  },
+  {
+    "id": "usool-at-tafseer",
+    "title": "Usool at-Tafseer",
+    "author": "Dr. Abu Ameenah Bilal Philips",
+    "description": "A student-friendly introduction to the fundamental principles of Quranic interpretation.",
+    "category": "Tafsir & Quran",
+    "icon": "🎓",
+    "url": "https://thesalafiyahh.com/?type=book&id=26"
+  },
+  {
+    "id": "ulum-al-quran",
+    "title": "Ulum al-Quran",
+    "author": "Ahmad Von Denffer",
+    "description": "An accessible overview of the Quranic sciences written for the English-speaking Muslim audience.",
+    "category": "Tafsir & Quran",
+    "icon": "🔭",
+    "url": "https://thesalafiyahh.com/?type=book&id=27"
+  },
+  {
+    "id": "character-bearers-of-quran",
+    "title": "The Character of the Bearers of the Qur'an",
+    "author": "Imam Abu Bakr Muhammad b. al Husayn",
+    "description": "The qualities, manners, and character that one who carries the Quran in their heart must possess.",
+    "category": "Tafsir & Quran",
+    "icon": "💫",
+    "url": "https://thesalafiyahh.com/?type=book&id=28"
+  },
+  {
+    "id": "history-quranic-text",
+    "title": "The History of the Quranic Text",
+    "author": "M.M. Al-Azami",
+    "description": "A scholarly and thorough account of how the Quran was preserved from the time of revelation to today.",
+    "category": "Tafsir & Quran",
+    "icon": "📜",
+    "url": "https://thesalafiyahh.com/?type=book&id=29"
+  },
+  {
+    "id": "excellent-qualities-quran",
+    "title": "Excellent Qualities of the Quran",
+    "author": "Imam Muhammad Bin Abdul Wahab",
+    "description": "Highlights of the virtues, merits, and blessings of reciting and adhering to the Quran.",
+    "category": "Tafsir & Quran",
+    "icon": "⭐",
+    "url": "https://thesalafiyahh.com/?type=book&id=30"
+  },
+  {
+    "id": "real-life-lessons-quran",
+    "title": "Real Life Lessons from Quran",
+    "author": "Muhammad Bilal Lakhani",
+    "description": "Practical lessons extracted from Quranic stories and principles applicable to modern everyday life.",
+    "category": "Tafsir & Quran",
+    "icon": "💡",
+    "url": "https://thesalafiyahh.com/?type=book&id=31"
+  },
+  {
+    "id": "al-mulakhas-al-fiqhi",
+    "title": "Al-Mulakhas al-Fiqhi",
+    "author": "Shaykh Salih al-Fawzan",
+    "description": "A comprehensive summary of Islamic jurisprudence (Fiqh) covering all major acts of worship and transactions.",
+    "category": "Fiqh",
+    "icon": "⚖️",
+    "url": "https://thesalafiyahh.com/?type=book&id=32"
+  },
+  {
+    "id": "umdat-al-ahkam",
+    "title": "Umdat al-Ahkam",
+    "author": "Hafiz Abd al-Ghani al-Maqdisi",
+    "description": "A collection of the most authentic hadith related to Islamic legal rulings used as a primary Fiqh reference.",
+    "category": "Fiqh",
+    "icon": "📜",
+    "url": "https://thesalafiyahh.com/?type=book&id=33"
+  },
+  {
+    "id": "description-prophets-prayer",
+    "title": "Description Of The Prophet's Prayer",
+    "author": "Shaykh Muhammad Nasiruddin al-Albani",
+    "description": "A detailed description of the Prophet's prayer (ﷺ) from beginning to end, as if you were seeing it.",
+    "category": "Fiqh",
+    "icon": "🕌",
+    "url": "https://thesalafiyahh.com/?type=book&id=34"
+  },
+  {
+    "id": "inner-dimensions-of-prayer",
+    "title": "Inner Dimensions Of Prayer",
+    "author": "Imam Ibn Qayyim al-Jawziyyah",
+    "description": "The spiritual heart of Salah — understanding the inner meaning and presence of mind during prayer.",
+    "category": "Fiqh",
+    "icon": "🙏",
+    "url": "https://thesalafiyahh.com/?type=book&id=35"
+  },
+  {
+    "id": "riyadh-as-saliheen",
+    "title": "Riyadh as-Saliheen",
+    "author": "Imam an-Nawawi",
+    "description": "The Meadows of the Righteous — a compilation of Quranic verses and authentic hadith on righteous conduct.",
+    "category": "Hadith",
+    "icon": "🌸",
+    "url": "https://thesalafiyahh.com/?type=book&id=36"
+  },
+  {
+    "id": "forty-hadiths",
+    "title": "The Forty Hadiths",
+    "author": "Imam an-Nawawi",
+    "description": "An-Nawawi's Forty — forty-two foundational hadith that cover the core principles of Islam.",
+    "category": "Hadith",
+    "icon": "🔢",
+    "url": "https://thesalafiyahh.com/?type=book&id=37"
+  },
+  {
+    "id": "bulugh-al-maram",
+    "title": "Bulugh al-Maram",
+    "author": "Ibn Hajar al-Asqalani",
+    "description": "Attainment of the Objective — a collection of hadith used as evidence for Islamic jurisprudential rulings.",
+    "category": "Hadith",
+    "icon": "🎯",
+    "url": "https://thesalafiyahh.com/?type=book&id=38"
+  },
+  {
+    "id": "upright-moral-character",
+    "title": "Upright Moral Character",
+    "author": "Shaykh Muhammad ibn Salih al-Uthaymeen",
+    "description": "A guide to developing noble Islamic character and upright moral conduct in everyday life.",
+    "category": "Tazkiyah & Character",
+    "icon": "🌷",
+    "url": "https://thesalafiyahh.com/?type=book&id=39"
+  },
+  {
+    "id": "supporting-rights-believing-women",
+    "title": "Supporting The Rights Of The Believing Women",
+    "author": "Umm Salamah As-Salafiyyah",
+    "description": "A book addressing the rights and status of Muslim women from the perspective of authentic Islamic texts.",
+    "category": "Tazkiyah & Character",
+    "icon": "🌺",
+    "url": "https://thesalafiyahh.com/?type=book&id=40"
+  },
+  {
+    "id": "ideal-muslimah",
+    "title": "The Ideal Muslimah",
+    "author": "Dr. Muhammad Ali Al-Hashimi",
+    "description": "A comprehensive guide for Muslim women on how to embody the ideal Islamic character in all roles of life.",
+    "category": "Tazkiyah & Character",
+    "icon": "💐",
+    "url": "https://thesalafiyahh.com/?type=book&id=41"
+  },
+  {
+    "id": "daily-routine-seeker",
+    "title": "A Daily Routine for the Seeker of Knowledge",
+    "author": "Shaykh Salih al-Uthaymeen",
+    "description": "A practical blueprint for the Muslim student of knowledge on how to structure their days productively.",
+    "category": "Tazkiyah & Character",
+    "icon": "📅",
+    "url": "https://thesalafiyahh.com/?type=book&id=42"
+  },
+  {
+    "id": "sealed-nectar",
+    "title": "The Sealed Nectar",
+    "author": "Safiur-Rahman Al-Mubarakpuri",
+    "description": "Ar-Raheeq Al-Makhtum — an award-winning biography of the Prophet Muhammad ﷺ.",
+    "category": "Seerah & History",
+    "icon": "🌙",
+    "url": "https://thesalafiyahh.com/?type=book&id=43"
+  },
+  {
+    "id": "history-of-islam",
+    "title": "The History of Islam",
+    "author": "Akbar Shah Najeebabadi",
+    "description": "A comprehensive account of Islamic history from the time of the Prophet ﷺ through the major Islamic empires.",
+    "category": "Seerah & History",
+    "icon": "🏛️",
+    "url": "https://thesalafiyahh.com/?type=book&id=44"
+  },
+  {
+    "id": "aisha-bint-abu-bakr",
+    "title": "Aisha Bint Abu Bakr",
+    "author": "Syed Sulaiman Nadvi",
+    "description": "A detailed and loving biography of Aisha (RA), the Mother of the Believers and greatest female scholar of Islam.",
+    "category": "Scholars & Biographies",
+    "icon": "⭐",
+    "url": "https://thesalafiyahh.com/?type=book&id=45"
+  },
+  {
+    "id": "abu-bakr-as-siddeeq",
+    "title": "Abu Bakr As-Siddeeq",
+    "author": "Dr. Ali Muhammad As-Sallaabee",
+    "description": "A comprehensive biography of Abu Bakr as-Siddeeq (RA), the first Caliph and closest companion of the Prophet.",
+    "category": "Scholars & Biographies",
+    "icon": "🛡️",
+    "url": "https://thesalafiyahh.com/?type=book&id=46"
+  },
+  {
+    "id": "madina-arabic-course",
+    "title": "Madina Arabic Course",
+    "author": "Dr. V. Abdur Rahim",
+    "description": "The internationally renowned Arabic language course used in the Islamic University of Madinah.",
+    "category": "Arabic Language",
+    "icon": "🔤",
+    "url": "https://thesalafiyahh.com/?type=book&id=47"
+  }
+]

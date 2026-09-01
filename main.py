@@ -6,6 +6,27 @@ from pydantic import BaseModel
 from typing import Optional
 import uvicorn
 import os
+import ssl
+
+# ── Permanent fix for Windows SSLKEYLOGFILE PermissionError ──────────────────
+# Python's ssl module reads the SSLKEYLOGFILE env-var at context creation time.
+# On this machine that var points to a *directory* (C:\AppData\Local\Temp),
+# which causes a PermissionError. We pre-build a shared SSL context that never
+# touches that path and re-use it for every httpx call.
+os.environ.pop("SSLKEYLOGFILE", None)   # clear before ssl module reads it
+
+def _make_ssl_ctx() -> ssl.SSLContext:
+    import certifi
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.load_verify_locations(certifi.where())
+    ctx.check_hostname = True
+    ctx.verify_mode = ssl.CERT_REQUIRED
+    # Explicitly do NOT set keylog_filename
+    return ctx
+
+SSL_CTX = _make_ssl_ctx()
+# ─────────────────────────────────────────────────────────────────────────────
+
 import sqlite3
 import json
 from datetime import datetime, timedelta
@@ -16,6 +37,7 @@ from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
+os.environ.pop("SSLKEYLOGFILE", None)  # clear again in case dotenv re-set it
 
 # --- Database Setup ---
 # Vercel (and most serverless) has a read-only filesystem — only /tmp is writable.
@@ -163,27 +185,81 @@ async def health():
 @app.post("/api/ask")
 async def ask_imam(req: AskRequest):
     import httpx
-    api_key = os.getenv("GROQ_API_KEY", "")
-    
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}"},
-                json={
-                    "model": "llama-3.3-70b-versatile",
-                    "messages": [
-                        {"role": "system", "content": "You are a knowledgeable and compassionate Imam assistant for the Hikmah app. Answer questions about Islam, Salah, Duas, and general religious guidance with wisdom and according to authentic sources. Keep responses concise and helpful for a mobile app user."},
-                        *req.messages
-                    ],
-                    "temperature": 0.7,
-                    "max_tokens": 1024
-                },
-                timeout=30.0
-            )
-            return response.json()
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+
+    SYSTEM_PROMPT = "You are a knowledgeable and compassionate Imam assistant for the Hikmah app. Answer questions about Islam, Salah, Duas, and general religious guidance with wisdom and according to authentic sources. Keep responses concise and helpful for a mobile app user."
+
+    # Sanitize messages array to ensure valid role and string content only
+    clean_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    for m in req.messages:
+        if isinstance(m, dict) and m.get("content"):
+            role = "assistant" if m.get("role") in ["bot", "assistant"] else "user"
+            clean_messages.append({"role": role, "content": str(m["content"])})
+
+    providers = [
+        {
+            "name": "Groq (groq/compound)",
+            "url": "https://api.groq.com/openai/v1/chat/completions",
+            "key": os.getenv("GROQ_API_KEY", ""),
+            "model": "groq/compound"
+        },
+        {
+            "name": "Groq (allam-2-7b)",
+            "url": "https://api.groq.com/openai/v1/chat/completions",
+            "key": os.getenv("GROQ_API_KEY", ""),
+            "model": "allam-2-7b"
+        },
+        {
+            "name": "Groq (qwen3.6-27b)",
+            "url": "https://api.groq.com/openai/v1/chat/completions",
+            "key": os.getenv("GROQ_API_KEY", ""),
+            "model": "qwen/qwen3.6-27b"
+        },
+        {
+            "name": "Groq (gpt-oss-20b)",
+            "url": "https://api.groq.com/openai/v1/chat/completions",
+            "key": os.getenv("GROQ_API_KEY", ""),
+            "model": "openai/gpt-oss-20b"
+        }
+    ]
+
+    last_error = None
+
+    async with httpx.AsyncClient(verify=SSL_CTX) as client:
+        for provider in providers:
+            if not provider["key"]:
+                continue
+
+            try:
+                print(f"Trying {provider['name']}...")
+                response = await client.post(
+                    provider["url"],
+                    headers={"Authorization": f"Bearer {provider['key']}"},
+                    json={
+                        "model": provider["model"],
+                        "messages": clean_messages,
+                        "temperature": 0.7,
+                        "max_tokens": 1024
+                    },
+                    timeout=15.0
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("choices") and data["choices"][0].get("message"):
+                        print(f"Success with {provider['name']}!")
+                        return data
+                    else:
+                        last_error = f"{provider['name']}: unexpected response shape: {data}"
+                else:
+                    print(f"{provider['name']} failed ({response.status_code}): {response.text[:200]}")
+                    last_error = f"{provider['name']} ({response.status_code}): {response.text[:200]}"
+
+            except Exception as e:
+                print(f"{provider['name']} exception: {e}")
+                last_error = str(e)
+
+    raise HTTPException(status_code=500, detail=f"All AI providers failed. Details: {last_error}")
+
 
 @app.get("/api/quiz")
 async def generate_quiz():
@@ -193,7 +269,7 @@ async def generate_quiz():
     
     prompt = "Generate 5 multiple choice questions about general Islamic knowledge. Make them diverse (history, quran, prophets, fiqh). Return a JSON object with a single key 'questions' containing an array of objects. Each object must have 'q' (the question string), 'a' (an array of exactly 4 answer strings), and 'c' (the integer index 0-3 of the correct answer in 'a')."
     
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(verify=SSL_CTX) as client:
         try:
             response = await client.post(
                 "https://api.groq.com/openai/v1/chat/completions",
@@ -239,7 +315,7 @@ async def generate_tasbih(req: TasbihRequest):
     Choose from authentic Dhikr phrases like SubhanAllah, Alhamdulillah, Allahu Akbar, Astaghfirullah, 
     or longer phrases. Be specific to the context provided."""
     
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(verify=SSL_CTX) as client:
         try:
             response = await client.post(
                 "https://api.groq.com/openai/v1/chat/completions",

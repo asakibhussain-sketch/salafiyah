@@ -385,6 +385,12 @@ const learningContent = [
         <br><br>• <strong>The Sun from the West:</strong> A cosmic sign after which repentance is no longer accepted.`
     },
     {
+        id: 'books_section',
+        title: 'Books Library',
+        icon: '📚',
+        content: `A curated collection of highly authentic and beneficial Islamic books to help you on your journey of seeking knowledge.`
+    },
+    {
         id: 'caliphs',
         title: 'The Four Caliphs',
         icon: '🛡️',
@@ -1107,33 +1113,44 @@ function sendMessage() {
     chatMsgs.appendChild(loadingBubble);
     chatMsgs.scrollTop = chatMsgs.scrollHeight;
 
-    fetch("/api/ask", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            messages: state.chat.messages.map(m => ({ role: m.role === 'bot' ? 'assistant' : 'user', content: m.content }))
-        })
-    })
-        .then(res => res.json())
-        .then(data => {
+    const makeRequest = async (retries = 1) => {
+        try {
+            const res = await fetch("/api/ask", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    messages: state.chat.messages.map(m => ({ role: m.role === 'bot' ? 'assistant' : 'user', content: m.content }))
+                })
+            });
+            
+            if (!res.ok) throw new Error("API responded with status: " + res.status);
+            
+            const data = await res.json();
             loadingBubble.remove();
+            
             if (data.choices && data.choices[0]) {
                 const response = data.choices[0].message.content;
-
                 const botTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                 state.chat.messages.push({ role: 'bot', content: response, time: botTime });
                 localStorage.setItem('chat_history', JSON.stringify(state.chat.messages));
                 renderChat();
             } else {
-                throw new Error("Invalid API response");
+                throw new Error("Invalid API response format");
             }
-        })
-        .catch(err => {
-            console.error("Groq API Error:", err);
-            loadingBubble.remove();
-            state.chat.messages.push({ role: 'bot', content: "I'm having trouble connecting to the knowledge base right now. Please try again in a moment." });
-            renderChat();
-        });
+        } catch (err) {
+            console.error("Chat API Error:", err);
+            if (retries > 0) {
+                console.log("Retrying chat request...");
+                setTimeout(() => makeRequest(retries - 1), 1000); // Retry after 1 second to allow wake up
+            } else {
+                loadingBubble.remove();
+                state.chat.messages.push({ role: 'bot', content: "I'm having trouble connecting to the knowledge base right now. Please try again in a moment." });
+                renderChat();
+            }
+        }
+    };
+
+    makeRequest();
 }
 
 function resetChat() {
@@ -4144,8 +4161,75 @@ function loadTopic(id) {
                     `).join('')}
                 </div>
             ` : ''}
+            
+            ${id === 'books_section' ? `
+                <div style="margin-top: 1.5rem;">
+                    <div id="books-filter-bar" style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.5rem;">
+                        <button onclick="window._filterBooks('All')" data-cat="All" style="padding: 0.35rem 1rem; border-radius: 999px; border: 1px solid var(--glass-border); background: var(--accent-gold); color: #000; font-size: 0.8rem; font-weight: 700; cursor: pointer;">All</button>
+                        <button onclick="window._filterBooks('Aqeedah')" data-cat="Aqeedah" style="padding: 0.35rem 1rem; border-radius: 999px; border: 1px solid var(--glass-border); background: transparent; color: var(--text-secondary); font-size: 0.8rem; cursor: pointer;">Aqeedah</button>
+                        <button onclick="window._filterBooks('Tafsir & Quran')" data-cat="Tafsir & Quran" style="padding: 0.35rem 1rem; border-radius: 999px; border: 1px solid var(--glass-border); background: transparent; color: var(--text-secondary); font-size: 0.8rem; cursor: pointer;">Tafsir & Quran</button>
+                        <button onclick="window._filterBooks('Fiqh')" data-cat="Fiqh" style="padding: 0.35rem 1rem; border-radius: 999px; border: 1px solid var(--glass-border); background: transparent; color: var(--text-secondary); font-size: 0.8rem; cursor: pointer;">Fiqh</button>
+                        <button onclick="window._filterBooks('Hadith')" data-cat="Hadith" style="padding: 0.35rem 1rem; border-radius: 999px; border: 1px solid var(--glass-border); background: transparent; color: var(--text-secondary); font-size: 0.8rem; cursor: pointer;">Hadith</button>
+                        <button onclick="window._filterBooks('Tazkiyah & Character')" data-cat="Tazkiyah & Character" style="padding: 0.35rem 1rem; border-radius: 999px; border: 1px solid var(--glass-border); background: transparent; color: var(--text-secondary); font-size: 0.8rem; cursor: pointer;">Tazkiyah</button>
+                        <button onclick="window._filterBooks('Seerah & History')" data-cat="Seerah & History" style="padding: 0.35rem 1rem; border-radius: 999px; border: 1px solid var(--glass-border); background: transparent; color: var(--text-secondary); font-size: 0.8rem; cursor: pointer;">Seerah</button>
+                        <button onclick="window._filterBooks('Arabic Language')" data-cat="Arabic Language" style="padding: 0.35rem 1rem; border-radius: 999px; border: 1px solid var(--glass-border); background: transparent; color: var(--text-secondary); font-size: 0.8rem; cursor: pointer;">Arabic</button>
+                    </div>
+                    <div id="books-list-container" style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));">
+                        <div style="text-align: center; padding: 2rem; color: var(--text-secondary); grid-column: 1/-1;">Loading books...</div>
+                    </div>
+                </div>
+            ` : ''}
+
         </div>
     `;
+
+    // Books: <script> tags inside innerHTML don't execute. Run logic here directly.
+    if (id === 'books_section') {
+        let _allBooks = [];
+
+        window._filterBooks = function(cat) {
+            document.querySelectorAll('#books-filter-bar button').forEach(btn => {
+                const active = btn.dataset.cat === cat;
+                btn.style.background = active ? 'var(--accent-gold)' : 'transparent';
+                btn.style.color = active ? '#000' : 'var(--text-secondary)';
+                btn.style.fontWeight = active ? '700' : '400';
+            });
+            const filtered = cat === 'All' ? _allBooks : _allBooks.filter(b => b.category === cat);
+            _renderBooksGrid(filtered);
+        };
+
+        function _renderBooksGrid(books) {
+            const container = document.getElementById('books-list-container');
+            if (!container) return;
+            if (!books.length) {
+                container.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-secondary);grid-column:1/-1;">No books in this category.</div>';
+                return;
+            }
+            container.innerHTML = books.map((book, i) => `
+                <a href="${book.url}" target="_blank" rel="noopener"
+                   style="text-decoration:none;display:flex;flex-direction:column;background:rgba(255,255,255,0.03);border:1px solid var(--glass-border);border-radius:14px;padding:1.5rem;animation:fadeIn 0.3s ease both;animation-delay:${i * 0.04}s;transition:transform 0.2s,background 0.2s,box-shadow 0.2s;"
+                   onmouseover="this.style.transform='translateY(-3px)';this.style.background='rgba(255,255,255,0.07)';this.style.boxShadow='0 8px 32px rgba(0,0,0,0.2)'"
+                   onmouseout="this.style.transform='';this.style.background='rgba(255,255,255,0.03)';this.style.boxShadow=''">
+                    <div style="font-size:2.2rem;text-align:center;margin-bottom:0.75rem;">${book.icon}</div>
+                    <div style="font-weight:700;color:var(--accent-gold);font-size:1rem;margin-bottom:0.3rem;text-align:center;line-height:1.3;">${book.title}</div>
+                    <div style="font-size:0.8rem;color:#7c8cf8;margin-bottom:0.75rem;text-align:center;font-style:italic;">By ${book.author}</div>
+                    <div style="font-size:0.82rem;color:var(--text-secondary);line-height:1.5;flex:1;">${book.description}</div>
+                    <div style="margin-top:1.25rem;padding-top:0.75rem;border-top:1px solid var(--glass-border);display:flex;justify-content:space-between;align-items:center;">
+                        <span style="font-size:0.72rem;background:rgba(255,255,255,0.06);padding:0.2rem 0.6rem;border-radius:4px;color:var(--text-secondary);">${book.category}</span>
+                        <span style="font-size:0.8rem;color:var(--accent-gold);font-weight:700;">Read Book →</span>
+                    </div>
+                </a>
+            `).join('');
+        }
+
+        fetch('books.json')
+            .then(res => res.json())
+            .then(books => { _allBooks = books; _renderBooksGrid(books); })
+            .catch(() => {
+                const c = document.getElementById('books-list-container');
+                if (c) c.innerHTML = '<div style="color:#ef4444;text-align:center;padding:2rem;grid-column:1/-1;">Failed to load books.</div>';
+            });
+    }
 }
 
 function renderNearby() {
