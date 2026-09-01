@@ -1182,13 +1182,22 @@ function sendMessage() {
 
     const makeRequest = async (retries = 1) => {
         try {
-            const res = await fetch("/api/ask", {
+            let res = await fetch("/ask", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     messages: state.chat.messages.map(m => ({ role: m.role === 'bot' ? 'assistant' : 'user', content: m.content }))
                 })
             });
+            if (!res.ok) {
+                res = await fetch("/api/ask", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        messages: state.chat.messages.map(m => ({ role: m.role === 'bot' ? 'assistant' : 'user', content: m.content }))
+                    })
+                });
+            }
             
             if (!res.ok) throw new Error("API responded with status: " + res.status);
             
