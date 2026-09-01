@@ -156,6 +156,7 @@ app.add_middleware(
 # --- Routes ---
 
 @app.get("/api/health")
+@app.get("/health")
 async def health():
     """Diagnostic endpoint to check deployment config."""
     db_writable = False
@@ -183,6 +184,7 @@ async def health():
 
 
 @app.post("/api/ask")
+@app.post("/ask")
 async def ask_imam(req: AskRequest):
     import httpx
 
@@ -262,6 +264,7 @@ async def ask_imam(req: AskRequest):
 
 
 @app.get("/api/quiz")
+@app.get("/quiz")
 async def generate_quiz():
     import httpx
     import json
@@ -275,7 +278,7 @@ async def generate_quiz():
                 "https://api.groq.com/openai/v1/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}"},
                 json={
-                    "model": "llama-3.3-70b-versatile",
+                    "model": "groq/compound",
                     "messages": [
                         {"role": "system", "content": "You output only valid JSON."},
                         {"role": "user", "content": prompt}
@@ -304,6 +307,8 @@ class TasbihRequest(BaseModel):
     context: str = "general remembrance"
 
 @app.post("/api/ai/tasbih")
+@app.post("/ai/tasbih")
+@app.post("/tasbih")
 async def generate_tasbih(req: TasbihRequest):
     import httpx
     api_key = os.getenv("GROQ_API_KEY", "")
@@ -349,7 +354,7 @@ async def serve_static(path: str):
     clean_path = path.split('?')[0]
     
     # If it's an API route, let it fall through
-    if clean_path.startswith("api/"):
+    if clean_path.startswith("api/") or clean_path in ["ask", "health", "quiz", "tasbih", "ai/tasbih"]:
         raise HTTPException(status_code=404)
         
     # Default to index.html for root
