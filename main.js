@@ -1043,6 +1043,73 @@ async function loadScreen(screen) {
 
 // --- Screen Renders ---
 
+function formatMarkdownInline(str) {
+    if (!str) return '';
+    return str
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.12); padding:0.15rem 0.4rem; border-radius:4px; font-size:0.85em;">$1</code>');
+}
+
+function formatChatMessage(text) {
+    if (!text) return '';
+
+    // 1. Process Markdown tables
+    text = text.replace(/(?:(?:^|\n)\|[^\n]+\|\n?)+/g, (tableBlock) => {
+        const lines = tableBlock.trim().split('\n').filter(l => l.trim().startsWith('|'));
+        if (lines.length < 2) return tableBlock;
+
+        let html = '<div style="overflow-x:auto; margin: 0.8rem 0;"><table style="width:100%; border-collapse:collapse; font-size:0.85rem; border:1px solid rgba(255,255,255,0.15); border-radius:8px; overflow:hidden;">';
+        let isHeader = true;
+
+        lines.forEach((line) => {
+            if (/^\|[\s\-:|]+\|$/.test(line.trim())) {
+                isHeader = false;
+                return;
+            }
+            const cells = line.split('|').slice(1, -1).map(c => c.trim());
+            if (cells.length === 0) return;
+
+            if (isHeader) {
+                html += '<thead><tr style="background:rgba(255,255,255,0.12); font-weight:700;">' + 
+                    cells.map(c => `<th style="padding:0.6rem 0.8rem; border:1px solid rgba(255,255,255,0.15); text-align:left; color:var(--accent-gold);">${formatMarkdownInline(c)}</th>`).join('') + 
+                    '</tr></thead><tbody>';
+                isHeader = false;
+            } else {
+                html += '<tr>' + 
+                    cells.map(c => `<td style="padding:0.5rem 0.8rem; border:1px solid rgba(255,255,255,0.12);">${formatMarkdownInline(c)}</td>`).join('') + 
+                    '</tr>';
+            }
+        });
+        html += '</tbody></table></div>';
+        return html;
+    });
+
+    // 2. Process Headers (### Header)
+    text = text.replace(/^### (.*$)/gim, '<h4 style="margin:1.2rem 0 0.4rem; color:var(--accent-gold); font-size:1rem; font-weight:700;">$1</h4>');
+    text = text.replace(/^## (.*$)/gim, '<h3 style="margin:1.2rem 0 0.4rem; color:var(--accent-gold); font-size:1.1rem; font-weight:700;">$1</h3>');
+    text = text.replace(/^# (.*$)/gim, '<h2 style="margin:1.2rem 0 0.4rem; color:var(--accent-gold); font-size:1.2rem; font-weight:700;">$1</h2>');
+
+    // 3. Process Lists
+    text = text.replace(/^\d+\.\s+(.*$)/gim, '<li style="margin-left:1.2rem; list-style-type:decimal; margin-bottom:0.3rem;">$1</li>');
+    text = text.replace(/^[-\*]\s+(.*$)/gim, '<li style="margin-left:1.2rem; list-style-type:disc; margin-bottom:0.3rem;">$1</li>');
+    text = text.replace(/(<li.*<\/li>\n?)+/g, '<ul style="margin:0.6rem 0; padding-left:0.5rem;">$&</ul>');
+
+    // 4. Inline bold/italic/code
+    text = formatMarkdownInline(text);
+
+    // 5. Paragraphs & line breaks
+    const blocks = text.split('\n\n');
+    return blocks.map(b => {
+        b = b.trim();
+        if (!b) return '';
+        if (b.startsWith('<table') || b.startsWith('<h') || b.startsWith('<ul') || b.startsWith('<div')) {
+            return b;
+        }
+        return `<p style="margin:0.5rem 0; line-height:1.6;">${b.replace(/\n/g, '<br>')}</p>`;
+    }).join('');
+}
+
 function renderChat() {
     const currentTranslation = quranTranslations.find(t => t.id === state.settings.translationEdition)?.name || 'English (Asad)';
     contentArea.innerHTML = `
@@ -1077,7 +1144,7 @@ function renderChat() {
                 <div class="chat-messages" id="chat-messages">
                     ${state.chat.messages.map(m => `
                         <div class="chat-bubble ${m.role}">
-                            ${m.content}
+                            ${m.role === 'bot' ? formatChatMessage(m.content) : m.content}
                             <div style="font-size:0.65rem; opacity:0.4; margin-top:0.4rem; text-align:${m.role === 'user' ? 'right' : 'left'}">${m.time || ''}</div>
                         </div>
                     `).join('')}
