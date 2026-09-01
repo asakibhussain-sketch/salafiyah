@@ -16,12 +16,12 @@ import ssl
 os.environ.pop("SSLKEYLOGFILE", None)   # clear before ssl module reads it
 
 def _make_ssl_ctx() -> ssl.SSLContext:
-    import certifi
-    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    ctx.load_verify_locations(certifi.where())
-    ctx.check_hostname = True
-    ctx.verify_mode = ssl.CERT_REQUIRED
-    # Explicitly do NOT set keylog_filename
+    ctx = ssl.create_default_context()
+    try:
+        import certifi
+        ctx.load_verify_locations(certifi.where())
+    except Exception:
+        pass
     return ctx
 
 SSL_CTX = _make_ssl_ctx()
@@ -197,29 +197,32 @@ async def ask_imam(req: AskRequest):
             role = "assistant" if m.get("role") in ["bot", "assistant"] else "user"
             clean_messages.append({"role": role, "content": str(m["content"])})
 
+    groq_key = os.getenv("GROQ_API_KEY", "")
+    openai_key = os.getenv("OPENAI_API_KEY") or ""
+
     providers = [
         {
             "name": "Groq (groq/compound)",
             "url": "https://api.groq.com/openai/v1/chat/completions",
-            "key": os.getenv("GROQ_API_KEY", ""),
+            "key": groq_key,
             "model": "groq/compound"
         },
         {
             "name": "Groq (allam-2-7b)",
             "url": "https://api.groq.com/openai/v1/chat/completions",
-            "key": os.getenv("GROQ_API_KEY", ""),
+            "key": groq_key,
             "model": "allam-2-7b"
         },
         {
             "name": "Groq (qwen3.6-27b)",
             "url": "https://api.groq.com/openai/v1/chat/completions",
-            "key": os.getenv("GROQ_API_KEY", ""),
+            "key": groq_key,
             "model": "qwen/qwen3.6-27b"
         },
         {
             "name": "Groq (gpt-oss-20b)",
             "url": "https://api.groq.com/openai/v1/chat/completions",
-            "key": os.getenv("GROQ_API_KEY", ""),
+            "key": groq_key,
             "model": "openai/gpt-oss-20b"
         }
     ]
